@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: revsy-backend
+    runtime: node
+    plan: free
+    buildCommand: cd server && npm install
+    startCommand: cd server && node src/server.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+    disk:
+      name: revsy-data
+      mountPath: /opt/render/project/src/server/data
+      sizeGB: 1
+
+  - type: web
+    name: revsy-frontend
+    runtime: node
+    plan: free
+    buildCommand: cd client && npm install && npm run build
+    startCommand: cd client && npx next start -p $PORT
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NEXT_PUBLIC_API_BASE
+        sync: false
