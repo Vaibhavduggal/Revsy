@@ -2,11 +2,11 @@
   "version": 2,
   "builds": [
     {
-      "src": "client/vite.config.js",
+      "src": "package.json",
       "use": "@vercel/static-build",
       "config": {
         "command": "build",
-        "cwd": "client"
+        "cwd": "."
       }
     }
   ],
