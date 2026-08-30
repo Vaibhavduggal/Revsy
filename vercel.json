@@ -16,8 +16,7 @@
       "dest": "https://YOUR_BACKEND_URL"
     },
     {
-      "src": "/(.*)",
-      "fallback": "/index.html"
+      "src": "/(.*)"
     }
   ]
 }
