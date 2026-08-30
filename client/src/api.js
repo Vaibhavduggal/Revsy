@@ -9,10 +9,13 @@ export function setToken(t) {
 }
 
 async function request(method, path, body) {
+  // Use environment variable for API base, fallback to '/api' for development
+  // Vercel will rewrite /api/* to your deployed backend, or serve SPA for other routes
+  const baseUrl = process.env.NEXT_PUBLIC_API_BASE || '/api';
   const headers = { 'Content-Type': 'application/json' };
   const token = getToken();
   if (token) headers.Authorization = `Bearer ${token}`;
-  const res = await fetch(`/api${path}`, {
+  const res = await fetch(`${baseUrl}${path}`, {
     method,
     headers,
     body: body ? JSON.stringify(body) : undefined,

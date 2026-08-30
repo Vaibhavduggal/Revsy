@@ -14,7 +14,7 @@
   "routes": [
     {
       "src": "/api/(.*)",
-      "dest": "https://YOUR_BACKEND_URL"
+      "dest": "/index.html"
     },
     {
       "src": "/(.*)",
