@@ -1,0 +1,23 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "client/vite.config.js",
+      "use": "@vercel/static-build",
+      "config": {
+        "command": "build",
+        "cwd": "client"
+      }
+    }
+  ],
+  "routes": [
+    {
+      "src": "/api/(.*)",
+      "dest": "https://YOUR_BACKEND_URL"
+    },
+    {
+      "src": "/(.*)",
+      "fallback": "/index.html"
+    }
+  ]
+}
