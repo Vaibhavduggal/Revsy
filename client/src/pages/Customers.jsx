@@ -80,7 +80,7 @@ function CustomerDrawer({ customer, business, onClose, onChanged }) {
   const [detail, setDetail] = useState(null);
   const [busy, setBusy] = useState(false);
   const [feedbackText, setFeedbackText] = useState('');
-  const [customizing, setCustomizing] = useState(false);
+  const stage = detail?.customer.stage || customer.stage;
 
   const load = useCallback(async () => {
     const r = await api.customer(customer.id);
@@ -89,8 +89,6 @@ function CustomerDrawer({ customer, business, onClose, onChanged }) {
   }, [customer.id]);
 
   useEffect(() => { load(); }, [load]);
-
-  const stage = detail?.customer.stage || customer.stage;
 
   const run = async (apiCall, msg) => {
     setBusy(true);
@@ -101,8 +99,6 @@ function CustomerDrawer({ customer, business, onClose, onChanged }) {
       onChanged();
     } catch (e) { show(e.message); } finally { setBusy(false); }
   };
-
-  const next = NEXT_ACTION[stage];
 
   return (
     <div className="modal-backdrop" onMouseDown={onClose}>
@@ -165,17 +161,9 @@ function CustomerDrawer({ customer, business, onClose, onChanged }) {
               )}
               {stage === 'reviewed' && <div className="ok-note"><Icon.check width={15} height={15} /> Completed — review is public on Google.</div>}
             </div>
-
-            <div className="drawer-section flex wrap" style={{ gap: 8 }}>
-              <button className="btn ghost sm" onClick={() => setCustomizing(true)}><Icon.settings width={14} height={14} /> Customize message</button>
-              <button className="btn ghost sm" onClick={() => run(() => api.resetCustomer(customer.id), 'Reset to To Send')}>Reset pipeline</button>
-            </div>
           </>
         )}
       </div>
-      {customizing && detail && (
-        <CustomizeModal customer={detail.customer} business={business} onClose={() => setCustomizing(false)} onSaved={() => { load(); onChanged(); }} />
-      )}
       {node}
     </div>
   );
@@ -212,10 +200,6 @@ export default function Customers() {
   const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [openId, setOpenId] = useState(null);
-  const [importOpen, setImportOpen] = useState(false);
-  const [csvText, setCsvText] = useState('');
-  const [busyId, setBusyId] = useState(null);
-  const [customizing, setCustomizing] = useState(null);
 
   const load = useCallback(async () => {
     try {
@@ -262,23 +246,6 @@ export default function Customers() {
     URL.revokeObjectURL(url);
   };
 
-  const [showAdd, setShowAdd] = useState(false);
-  const [n, setN] = useState('');
-  const [p, setP] = useState('');
-  const [busyAdd, setBusyAdd] = useState(false);
-  const addOne = async (e) => {
-    e.preventDefault();
-    if (!n.trim() || !p.trim()) return;
-    setBusyAdd(true);
-    try {
-      await api.addCustomer(n.trim(), p.trim());
-      show(`Added ${n.trim()} — review request scheduled`);
-      setN(''); setP(''); setShowAdd(false); load();
-    } catch (err) { show(err.message); } finally { setBusyAdd(false); }
-  };
-
-  const openCustomer = openId ? (customers.find((c) => c.id === openId) || null) : null;
-
   return (
     <div className="page">
       <div className="page-head">
@@ -290,10 +257,9 @@ export default function Customers() {
           {sentiment === 'all' ? (
             <button className={`btn ghost sm ${sentiment === 'all' ? 'active' : ''}`} disabled>All sentiment</button>
           ) : (
-            <button className="btn ghost sm active" onClick={() => {}}>Filtered: {sentiment}</button>
+            <button className="btn ghost sm active" onClick={() => {}})>Filtered: {sentiment}</button>
           )}
           <button className="btn secondary" onClick={() => setImportOpen(true)}><Icon.upload width={16} height={16} /> Import CSV</button>
-          <button className="btn" onClick={() => setShowAdd(true)}><Icon.plus width={16} height={16} /> Add customer</button>
         </div>
       </div>
 
@@ -322,19 +288,6 @@ export default function Customers() {
             );
           })}
         </div>
-      )}
-
-      {showAdd && (
-        <Modal title="Add customer" sub="Name + phone. A follow-up is scheduled automatically." onClose={() => setShowAdd(false)}>
-          <form onSubmit={addOne}>
-            <div className="field"><label>Name</label><input className="input" value={n} onChange={(e) => setN(e.target.value)} placeholder="Rahul Sharma" autoFocus /></div>
-            <div className="field"><label>Phone</label><input className="input" value={p} onChange={(e) => setP(e.target.value)} placeholder="+91 98xxx xxxxx" /></div>
-            <div className="modal-actions">
-              <button type="button" className="btn secondary" onClick={() => setShowAdd(false)}>Cancel</button>
-              <button type="submit" className="btn" disabled={busyAdd}>{busyAdd ? 'Adding…' : 'Add customer'}</button>
-            </div>
-          </form>
-        </Modal>
       )}
 
       {importOpen && (

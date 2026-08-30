@@ -113,7 +113,7 @@ export default function Dashboard() {
   const [data, setData] = useState(null);
   const [activity, setActivity] = useState([]);
   const [sentiment, setSentiment] = useState(null);
-  const [failed, setFailed] = useState([]);
+  const [failed, setFailed] = useState[];
   const [retrying, setRetrying] = useState(null);
   const [loading, setLoading] = useState(true);
   const [logOpen, setLogOpen] = useState(false);
@@ -138,6 +138,20 @@ export default function Dashboard() {
     const r = await api.incrementReviews();
     setData((d) => ({ ...d, stats: { ...d.stats, totalReceived: r.reviewsReceived, conversionRate: d.stats.totalSent ? Math.round((r.reviewsReceived / d.stats.totalSent) * 1000) / 10 : 0 } }));
     setBusiness((b) => ({ ...b, reviewsReceived: r.reviewsReceived }));
+  };
+  const syncGoogleReviews = async () => {
+    const placeId = business?.googlePlaceId;
+    if (!placeId) {
+      show('Please configure a Google Place ID in Settings first');
+      return;
+    }
+    const r = await api.syncGoogleReviews({ placeId, apiKey: business?.googleApiKey || '' });
+    if (r.connected) {
+      show(`Synced ${r.synced} new Google reviews`);
+      load();
+    } else {
+      show(r.error || 'Failed to sync Google reviews');
+    }
   };
   const retry = async (id) => {
     setRetrying(id);
@@ -182,9 +196,6 @@ export default function Dashboard() {
               <button className="btn green sm" onClick={inc} style={{ padding: '2px 8px' }}>+</button>
             </span>
           </div>
-          <button className="btn ghost sm" style={{ marginTop: 8, padding: '4px 8px' }} onClick={() => setLogOpen(true)}>
-            <Icon.plus width={13} height={13} /> Log a review
-          </button>
         </div>
         <div className="stat">
           <div className="icon"><Icon.rocket width={20} height={20} /></div>
@@ -196,28 +207,41 @@ export default function Dashboard() {
           <div className="label">Avg / week</div>
           <div className="value">{Math.round(stats.totalSent / 8)}</div>
         </div>
+        <div className="stat">
+          <div className="icon"><Icon.sync width={20} height={20} /></div>
+          <div className="label">Sync Google Reviews</div>
+          <div className="value" onClick={syncGoogleReviews} style={{ cursor: business?.googlePlaceId ? 'pointer' : 'default', color: business?.googlePlaceId ? 'var(--accent)' : 'var(--muted)' }} title={business?.googlePlaceId ? 'Sync Google Reviews' : 'Configure Place ID in Settings'}></div>
+        </div>
       </div>
 
       <div className="row two" style={{ marginTop: 16 }}>
-        <div className="card sentiment-snap">
-          <h3>Sentiment split</h3>
-          <div className="sub">How customers reacted to the 👍 / 👎 prompt</div>
+        <div className="card sentiment-split">
+          <h3>Positive reviews</h3>
+          <div className="sub">Customers who left 4+ star reviews</div>
           <div className="flex" style={{ gap: 20, alignItems: 'center', marginTop: 12 }}>
             <SentimentDonut s={sentiment} />
             <div className="flex col" style={{ gap: 10 }}>
               <div className="flex between" style={{ width: 180 }}><span><span className="dot pos" /> Positive</span><b>{sentiment?.positives ?? 0}</b></div>
               <div className="flex between" style={{ width: 180 }}><span><span className="dot neg" /> Negative</span><b>{sentiment?.negatives ?? 0}</b></div>
               <div className="flex between" style={{ width: 180 }}><span className="muted">Positive rate</span><b style={{ color: 'var(--ok)' }}>{sentiment?.positiveRate ?? 0}%</b></div>
-              <div className="flex between" style={{ width: 180 }}><span className="muted">Kept off Google</span><b style={{ color: 'var(--warn)' }}>{sentiment?.keptOffGoogleThisMonth ?? 0}</b></div>
             </div>
           </div>
         </div>
         <div className="card">
-          <h3>Reviews per week</h3>
-          <div className="sub">Last 8 weeks</div>
-          <div className="spacer" />
-          <BarChart weekly={weekly} />
+          <h3>Negative reviews</h3>
+          <div className="sub">Customers who left below 4 star reviews (kept private)</div>
+          <div className="flex col" style={{ gap: 10 }}>
+            <div className="flex between" style={{ width: 180 }}><span><span className="dot neg" /> Negative count</span><b>{sentiment?.keptOffGoogleThisMonth ?? 0}</b></div>
+            <div className="flex between" style={{ width: 180 }}><span className="muted">Kept off Google</span><b style={{ color: 'var(--warn)' }}>{sentiment?.keptOffGoogleThisMonth ?? 0}</b></div>
+          </div>
         </div>
+      </div>
+
+      <div className="card mb" style={{ marginTop: 16 }}>
+        <h3>Reviews per week</h3>
+        <div className="sub">Last 8 weeks</div>
+        <div className="spacer" />
+        <BarChart weekly={weekly} />
       </div>
 
       <div className="card mb" style={{ marginTop: 16 }}>

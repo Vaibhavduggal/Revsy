@@ -3,6 +3,7 @@ import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { Low } from 'lowdb';
 import { JSONFile } from 'lowdb/node';
+import bcrypt from 'bcryptjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = path.join(__dirname, '..', 'data');
@@ -52,7 +53,7 @@ function buildSeed() {
     id: 'biz_1',
     name: 'Smash Bros',
     ownerEmail: 'owner@business.com',
-    password: 'demo123',
+    password: bcrypt.hashSync('demo123', 10),
     googleReviewLink: 'https://g.page/smash-bros-ludhiana/review',
     feedbackLink: 'https://smashbros.example.com/feedback/private',
     address: 'SCF 29 F, Bhai Randhir Singh Nagar, Ludhiana, Punjab 141012',
@@ -191,8 +192,25 @@ function buildSeed() {
 
   business.reviewsReceived = reviewsReceived;
 
+  const admin = {
+    id: 'admin_1',
+    name: 'ReviewBot Admin',
+    ownerEmail: 'admin@reviewbot.com',
+    password: bcrypt.hashSync('admin123', 10),
+    googleReviewLink: '',
+    feedbackLink: '',
+    address: '',
+    phone: '',
+    description: 'Platform administrator',
+    messageTemplate: DEFAULT_TEMPLATE,
+    delaySeconds: 7200,
+    demoMode: false,
+    subscriptionStatus: 'active',
+    createdAt: new Date(now - 365 * DAY).toISOString(),
+  };
+
   return {
-    businesses: [business],
+    businesses: [business, admin],
     customers,
     requests,
     reviews,

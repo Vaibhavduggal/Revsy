@@ -1,34 +1,47 @@
-import { getDb, getBusiness } from './db.js';
+// Lightweight auth (no external deps)
+// Random signed tokens stored in tokenDB, with business/token mappings.
+// Passwords are hashed server-side with bcrypt.
+const { getDb } = require('./db.js');
+const bcrypt = require('bcryptjs');
 
-// Demo auth: the client stores the business id in localStorage and sends it as a
-// Bearer token. This is intentionally simple for a local pitch demo, but every
-// route is scoped by businessId so multi-tenant support can be layered on later.
-export function auth(req, res, next) {
-  const header = req.headers.authorization || '';
-  const token = header.startsWith('Bearer ') ? header.slice(7) : '';
-  if (!token) return res.status(401).json({ error: 'Unauthorized' });
-  const business = getBusiness(token);
-  if (!business) return res.status(401).json({ error: 'Unauthorized' });
-  req.business = business;
-  next();
+const TOKEN_PREFIX = 'tkn';
+const ID_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+
+function randomToken() {
+  let id = TOKEN_PREFIX;
+  for (let i = 0; i < 32; i++) id += ID_CHARS.charAt(Math.floor(Math.random() * ID_CHARS.length));
+  return id;
 }
 
-export async function recordActivity(db, businessId, activity) {
-  const entry = {
-    id: `act_${Date.now()}_${Math.floor(Math.random() * 1e6)}`,
-    businessId,
-    createdAt: new Date().toISOString(),
-    ...activity,
-  };
-  db.data.activities.unshift(entry);
-  if (db.data.activities.length > 200) db.data.activities.length = 200;
-  await db.write();
-  return entry;
+function generateToken(businessId) {
+  const db = getDb();
+  const token = randomToken();
+  db.data.tokenDB = db.data.tokenDB || {};
+  db.data.tokenDB[token] = { businessId, createdAt: new Date().toISOString() };
+  db.write();
+  return token;
 }
 
-export function publicBusiness(b) {
-  const { password, ...rest } = b;
-  return rest;
+function validateToken(token) {
+  const db = getDb();
+  return token && db.data.tokenDB && db.data.tokenDB[token] ? db.data.tokenDB[token] : null;
 }
 
-export { getDb };
+function revokeToken(token) {
+  const db = getDb();
+  if (db.data.tokenDB && db.data.tokenDB[token]) {
+    delete db.data.tokenDB[token];
+    db.write();
+  }
+}
+
+function hashPassword(password) {
+  const saltRounds = 10;
+  return bcrypt.hashSync(password, saltRounds);
+}
+
+function checkPassword(plain, hashed) {
+  return bcrypt.compareSync(plain, hashed);
+}
+
+module.exports = { generateToken, validateToken, revokeToken, hashPassword, checkPassword };

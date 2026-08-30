@@ -165,11 +165,12 @@ function buildWeekly(db, businessId) {
 router.post('/login', (req, res) => {
   const { email, password } = req.body || {};
   const db = getDb();
-  const business = db.data.businesses.find(
-    (b) => b.ownerEmail === email && b.password === password
-  );
+  const business = db.data.businesses.find((b) => b.ownerEmail === email);
   if (!business) return res.status(401).json({ error: 'Invalid email or password' });
-  res.json({ token: business.id, business: publicBusiness(business) });
+  const valid = checkPassword(password, business.password);
+  if (!valid) return res.status(401).json({ error: 'Invalid email or password' });
+  const token = generateToken(business.id);
+  res.json({ token, business: publicBusiness(business) });
 });
 
 // --- Dashboard ---
@@ -808,6 +809,7 @@ router.put('/settings', auth, async (req, res) => {
   if (typeof messageTemplate === 'string' && messageTemplate.trim()) b.messageTemplate = messageTemplate.trim();
   if (Number.isFinite(Number(delaySeconds))) b.delaySeconds = Number(delaySeconds);
   if (typeof demoMode === 'boolean') b.demoMode = demoMode;
+  if (typeof googlePlaceId === 'string') b.googlePlaceId = googlePlaceId.trim();
   await db.write();
   res.json({
     businessName: b.name,
@@ -861,7 +863,26 @@ router.post('/reviews/decrement', auth, (req, res) => {
 });
 
 // --- Admin ---
-router.get('/admin/businesses', (req, res) => {
+router.post('/admin/login', (req, res) => {
+  const { email, password } = req.body || {};
+  const db = getDb();
+  const business = db.data.businesses.find((b) => b.ownerEmail === email);
+  if (!business || business.id !== 'admin_1') return res.status(401).json({ error: 'Invalid admin credentials' });
+  const valid = checkPassword(password, business.password);
+  if (!valid) return res.status(401).json({ error: 'Invalid admin credentials' });
+  const token = generateToken(business.id);
+  res.json({ token, business: { id: business.id, name: business.name, ownerEmail: business.ownerEmail, isAdmin: true } });
+});
+
+function adminAuth(req, res, next) {
+  const token = req.headers.authorization?.replace('Bearer ', '') || '';
+  const payload = validateToken(token);
+  if (!payload || payload.businessId !== 'admin_1') return res.status(401).json({ error: 'Admin authentication required' });
+  req.business = payload;
+  next();
+}
+
+router.get('/admin/businesses', adminAuth, (req, res) => {
   const db = getDb();
   const list = db.data.businesses.map((b) => ({
     id: b.id,
@@ -875,7 +896,128 @@ router.get('/admin/businesses', (req, res) => {
   res.json({ businesses: list });
 });
 
-// --- Reset demo data ---
+// --- Add client ---
+router.post('/admin/clients', adminAuth, async (req, res) => {
+  const { businessName, ownerEmail, initialPassword } = req.body || {};
+  if (!businessName || !ownerEmail || !initialPassword) return res.status(400).json({ error: 'Business name, owner email and initial password are required' });
+  const db = getDb();
+  const existing = db.data.businesses.find((b) => b.ownerEmail === ownerEmail);
+  if (existing) return res.status(409).json({ error: 'A business with this email already exists' });
+  const hashedPwd = bcrypt.hashSync(initialPassword, 10);
+  const newBusiness = {
+    id: `biz_${Date.now()}`,
+    name: businessName,
+    ownerEmail,
+    password: hashedPwd,
+    googleReviewLink: '',
+    feedbackLink: '',
+    address: '',
+    phone: '',
+    description: '',
+    messageTemplate: DEFAULT_TEMPLATE,
+    delaySeconds: 7200,
+    demoMode: false,
+    subscriptionStatus: 'trial',
+    createdAt: new Date().toISOString(),
+  };
+  db.data.businesses.push(newBusiness);
+  await db.write();
+  res.json({ id: newBusiness.id, name: newBusiness.name, ownerEmail: newBusiness.ownerEmail });
+});
+
+// --- Remove client ---
+router.post('/admin/clients/:id/remove', adminAuth, async (req, res) => {
+  const db = getDb();
+  // Block removal of demo account
+  if (req.params.id === 'biz_1') return res.status(403).json({ error: 'Cannot remove the demo account' });
+  const business = db.data.businesses.find((b) => b.id === req.params.id);
+  if (!business) return res.status(404).json({ error: 'Business not found' });
+  db.data.businesses = db.data.businesses.filter((b) => b.id !== req.params.id);
+  // Also filter requests, customers, reviews, feedback
+  db.data.requests = db.data.requests.filter((r) => r.businessId !== req.params.id);
+  db.data.customers = db.data.customers.filter((c) => c.businessId !== req.params.id);
+  db.data.reviews = db.data.reviews.filter((r) => r.businessId !== req.params.id);
+  db.data.feedback = db.data.feedback.filter((f) => f.businessId !== req.params.id);
+  await db.write();
+  res.json({ ok: true });
+});
+
+// --- Onboard WhatsApp ---
+router.post('/admin/clients/:id/whatsapp', adminAuth, (req, res) => {
+  const { bspName, phoneNumberId, apiKey } = req.body || {};
+  const db = getDb();
+  const business = db.data.businesses.find((b) => b.id === req.params.id);
+  if (!business) return res.status(404).json({ error: 'Business not found' });
+  // Store BSP name and phone number ID, but NOT the API key
+  business.bspName = bspName;
+  business.phoneNumberId = phoneNumberId;
+  // We intentionally do NOT store/or return the API key - it's only used server-side
+  await db.write();
+  res.json({ bspName: business.bspName, phoneNumberId: business.phoneNumberId, connected: !!business.phoneNumberId });
+});
+
+// --- Set Google Place ID and review link ---
+router.put('/admin/clients/:id/google', adminAuth, (req, res) => {
+  const { placeId, reviewLink } = req.body || {};
+  const db = getDb();
+  const business = db.data.businesses.find((b) => b.id === req.params.id);
+  if (!business) return res.status(404).json({ error: 'Business not found' });
+  if (placeId) business.googleReviewLink = reviewLink || `https://g.page/${placeId}/review`;
+  if (reviewLink) business.googleReviewLink = reviewLink;
+  await db.write();
+  res.json({ googleReviewLink: business.googleReviewLink });
+});
+
+// --- Sync Google Reviews ---
+router.post('/sync-google-reviews', adminAuth, async (req, res) => {
+  const { placeId, apiKey } = req.body || {};
+  const db = getDb();
+  const business = db.data.businesses.find((b) => b.id === req.business.id);
+  if (!business) return res.status(404).json({ error: 'Business not found' });
+  if (!placeId || !apiKey) {
+    return res.json({ connected: false, error: 'Place ID and API key are required' });
+  }
+  try {
+    const response = await fetch(`https://maps.googleapis.com/maps/api/place/details/json?place_id=${placeId}&fields=reviews&key=${apiKey}`);
+    const data = await response.json();
+    if (data.status !== 'OK') {
+      return res.json({ connected: false, error: 'Failed to fetch Google reviews. Check Place ID and API key.' });
+    }
+    const fetchedReviews = data.result.reviews || [];
+    // Deduplicate: only add reviews not already in our database
+    const existingReviewIds = db.data.reviews.map((r) => r.customerId).filter(Boolean);
+    const newReviews = [];
+    for (const rev of fetchedReviews) {
+      if (existingReviewIds.includes(rev.author_name)) continue; // Skip if already exists
+      const rating = rev.rating;
+      const sentiment = rating >= 4 ? 'positive' : 'negative';
+      const isPositive = rating >= 4;
+      newReviews.push({
+        id: `google_rev_${rev.author_name}`,
+        businessId: business.id,
+        customerId: rev.author_name,
+        customerName: rev.author_name,
+        rating,
+        sentiment,
+        requestId: null,
+        sentAt: null,
+        createdAt: new Date().toISOString(),
+        fromGoogle: true,
+      });
+      // Mark this reviewer as already processed
+      existingReviewIds.push(rev.author_name);
+    }
+    // Add new reviews to database
+    db.data.reviews.push(...newReviews);
+    // Update reviewsReceived count
+    business.reviewsReceived = db.data.reviews.filter((r) => r.businessId === business.id).length;
+    await db.write();
+    res.json({ connected: true, synced: newReviews.length, total: business.reviewsReceived });
+  } catch (err) {
+    res.status(500).json({ connected: false, error: 'Error syncing Google reviews' });
+  }
+});
+
 router.post('/reset-db', auth, async (req, res) => {
   const db = getDb();
   const fresh = (await import('./db.js')).buildSeedExport();
