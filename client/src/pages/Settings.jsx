@@ -11,7 +11,7 @@ const TEMPLATE_VARS = '[customer name], [business name], [google review link]';
 export default function Settings() {
   const { business, setBusiness } = useAuth();
   const { show, node } = useToast();
-  const [form, setForm] = useState({ businessName: '', googleReviewLink: '', messageTemplate: '', delaySeconds: 7200, demoMode: false, googlePlaceId: '' });
+  const [form, setForm] = useState({ businessName: '', googleReviewLink: '', messageTemplate: '', delaySeconds: 7200, demoMode: false });
   const [preview, setPreview] = useState('');
   const [effectiveDelay, setEffectiveDelay] = useState(7200);
   const [loaded, setLoaded] = useState(false);
@@ -25,7 +25,6 @@ export default function Settings() {
         messageTemplate: s.messageTemplate,
         delaySeconds: s.delaySeconds,
         demoMode: s.demoMode,
-        googlePlaceId: s.googlePlaceId,
       });
       setLoaded(true);
     }).catch((e) => show(e.message));
@@ -34,7 +33,7 @@ export default function Settings() {
   useEffect(() => {
     if (!loaded) return;
     api.messagePreview().then((p) => { setPreview(p.message); setEffectiveDelay(p.effectiveDelay); }).catch(() => {});
-  }, [loaded, form.demoMode, form.businessName, form.googleReviewLink, form.messageTemplate, form.googlePlaceId]);
+  }, [loaded, form.demoMode, form.businessName, form.googleReviewLink, form.messageTemplate]);
 
   const update = (k, v) => setForm((f) => ({ ...f, [k]: v }));
 
@@ -71,8 +70,8 @@ export default function Settings() {
             <input className="input" value={form.businessName} onChange={(e) => update('businessName', e.target.value)} />
           </div>
           <div className="field">
-            <label>Google Place ID</label>
-            <input className="input" value={form.googlePlaceId} onChange={(e) => update('googlePlaceId', e.target.value)} placeholder="e.g. smash-bros-ludhiana" />
+            <label>Google Review direct link</label>
+            <input className="input" value={form.googleReviewLink} onChange={(e) => update('googleReviewLink', e.target.value)} placeholder="https://g.page/your-business/review" />
           </div>
           <div className="field">
             <label>Message template</label>

@@ -1,4 +1,5 @@
 const TOKEN_KEY = 'reviewbot_token';
+const ADMIN_TOKEN_KEY = 'reviewbot_admin_token';
 
 export function getToken() {
   return localStorage.getItem(TOKEN_KEY);
@@ -7,15 +8,19 @@ export function setToken(t) {
   if (t) localStorage.setItem(TOKEN_KEY, t);
   else localStorage.removeItem(TOKEN_KEY);
 }
+export function getAdminToken() {
+  return localStorage.getItem(ADMIN_TOKEN_KEY);
+}
+export function setAdminToken(t) {
+  if (t) localStorage.setItem(ADMIN_TOKEN_KEY, t);
+  else localStorage.removeItem(ADMIN_TOKEN_KEY);
+}
 
-async function request(method, path, body) {
-  // Use environment variable for API base, fallback to '/api' for development
-  // Vercel will rewrite /api/* to your deployed backend, or serve SPA for other routes
-  const baseUrl = process.env.NEXT_PUBLIC_API_BASE || '/api';
+async function baseRequest(method, path, body, tokenGetter) {
   const headers = { 'Content-Type': 'application/json' };
-  const token = getToken();
+  const token = tokenGetter();
   if (token) headers.Authorization = `Bearer ${token}`;
-  const res = await fetch(`${baseUrl}${path}`, {
+  const res = await fetch(`/api${path}`, {
     method,
     headers,
     body: body ? JSON.stringify(body) : undefined,
@@ -28,8 +33,13 @@ async function request(method, path, body) {
   return data;
 }
 
+const request = (method, path, body) => baseRequest(method, path, body, getToken);
+const adminRequest = (method, path, body) => baseRequest(method, path, body, getAdminToken);
+
 export const api = {
   login: (email, password) => request('POST', '/login', { email, password }),
+  demoLogin: () => request('POST', '/login/demo'),
+  logout: () => request('POST', '/logout'),
   dashboard: () => request('GET', '/dashboard'),
   customers: () => request('GET', '/customers'),
   customer: (id) => request('GET', `/customers/${id}`),
@@ -49,15 +59,24 @@ export const api = {
   updateSettings: (s) => request('PUT', '/settings', s),
   messagePreview: () => request('GET', '/message-preview'),
   reviews: () => request('GET', '/reviews'),
+  reviewsList: () => request('GET', '/reviews/list'),
+  syncGoogleReviews: () => request('POST', '/reviews/google/sync'),
   addReview: (payload) => request('POST', '/reviews', payload),
   removeLastReview: () => request('DELETE', '/reviews/last'),
   incrementReviews: () => request('POST', '/reviews/increment'),
   decrementReviews: () => request('POST', '/reviews/decrement'),
   analytics: () => request('GET', '/analytics'),
-  adminBusinesses: () => request('GET', '/admin/businesses'),
-  adminLogin: (email, password) => request('POST', '/admin/login', { email, password }),
-  syncGoogleReviews: (payload) => request('POST', '/sync-google-reviews', payload),
   resetDb: () => request('POST', '/reset-db'),
   failedSends: () => request('GET', '/pending-sends/failed'),
   retrySend: (id) => request('POST', `/pending-sends/${id}/retry`),
+};
+
+export const adminApi = {
+  login: (email, password) => adminRequest('POST', '/admin/login', { email, password }),
+  logout: () => adminRequest('POST', '/admin/logout'),
+  businesses: () => adminRequest('GET', '/admin/businesses'),
+  addBusiness: (payload) => adminRequest('POST', '/admin/businesses', payload),
+  removeBusiness: (id) => adminRequest('DELETE', `/admin/businesses/${id}`),
+  onboardWhatsapp: (id, payload) => adminRequest('PUT', `/admin/businesses/${id}/whatsapp`, payload),
+  setGoogle: (id, payload) => adminRequest('PUT', `/admin/businesses/${id}/google`, payload),
 };

@@ -75,24 +75,20 @@ p { margin: 0; }
 .card h3 { font-size: 16px; margin-bottom: 4px; }
 .card .sub { color: var(--muted); font-size: 13px; }
 
-/* ---------- Layout ---------- */
-.app-shell { min-height: 100%; display: flex; flex-direction: column; }
-.topbar {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 14px 26px; border-bottom: 1px solid var(--line); background: #fff;
-  position: sticky; top: 0; z-index: 30;
-}
+/* ---------- Layout ----------
+   NOTE: the real page shell (sidebar + main column) lives in styles-crm.css,
+   which is imported after this file. The old top-nav-only .app-shell/.topbar/.nav
+   rules that used to live here conflicted with it — this file declared
+   `.app-shell { flex-direction: column }` which was never overridden, so the
+   sidebar and main content stacked vertically instead of sitting side by side,
+   causing them to visually overlap/collide as soon as a page scrolled past one
+   viewport height. Removed; layout rules for .app-shell/.topbar now live solely
+   in styles-crm.css. */
 .brand { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 18px; letter-spacing: -0.03em; }
 .brand .logo {
   width: 34px; height: 34px; border-radius: 9px; display: grid; place-items: center;
   background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: #fff; font-size: 18px;
 }
-.nav { display: flex; gap: 4px; align-items: center; }
-.nav a {
-  padding: 8px 14px; border-radius: 9px; font-size: 14px; font-weight: 600; color: var(--muted);
-}
-.nav a:hover { background: var(--bg-soft); color: var(--ink); }
-.nav a.active { background: var(--accent-soft); color: var(--accent-dark); }
 
 .page { max-width: 1140px; margin: 0 auto; padding: 28px 26px 60px; width: 100%; }
 .page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 22px; }
@@ -282,3 +278,5 @@ p { margin: 0; }
   .page { padding: 20px 14px 50px; }
   .page-head { flex-direction: column; align-items: flex-start; }
 }
+  
+appended 

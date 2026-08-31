@@ -5,10 +5,10 @@ const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
   const [business, setBusiness] = useState(null);
-  const [admin, setAdmin] = useState(false);
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
+    // Session is the business id we received at login.
     if (getToken()) {
       api.settings()
         .then((s) => setBusiness({
@@ -26,26 +26,25 @@ export function AuthProvider({ children }) {
   const login = useCallback(async (email, password) => {
     const data = await api.login(email, password);
     setToken(data.token);
-    setBusiness({ id: data.business.id, name: data.business.name, ...data.business });
+    setBusiness({ id: data.token, ...data.business });
     return data.business;
   }, []);
 
-  const loginAdmin = useCallback(async (email, password) => {
-    const data = await api.adminLogin(email, password);
+  const demoLogin = useCallback(async () => {
+    const data = await api.demoLogin();
     setToken(data.token);
-    setAdmin(true);
-    setBusiness({ id: data.business.id, name: data.business.name, ...data.business, isAdmin: data.business.isAdmin });
+    setBusiness({ id: data.token, ...data.business });
     return data.business;
   }, []);
 
   const logout = useCallback(() => {
+    api.logout().catch(() => {});
     setToken(null);
     setBusiness(null);
-    setAdmin(false);
   }, []);
 
   return (
-    <AuthContext.Provider value={{ business, setBusiness, admin, setAdmin, ready, login, loginAdmin, logout }}>
+    <AuthContext.Provider value={{ business, setBusiness, ready, login, demoLogin, logout }}>
       {children}
     </AuthContext.Provider>
   );
@@ -53,9 +52,4 @@ export function AuthProvider({ children }) {
 
 export function useAuth() {
   return useContext(AuthContext);
-}
-
-export function useAdmin() {
-  const ctx = useContext(AuthContext);
-  return { admin: ctx?.admin, setAdmin: ctx?.setAdmin, loginAdmin: ctx?.loginAdmin, logout: ctx?.logout };
 }

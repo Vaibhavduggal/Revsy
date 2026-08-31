@@ -5,12 +5,13 @@ import { Icon, Logo } from '../components/Icons.jsx';
 import { useToast } from '../components/useToast.jsx';
 
 export default function Login() {
-  const { login } = useAuth();
+  const { login, demoLogin } = useAuth();
   const navigate = useNavigate();
   const { show, node } = useToast();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [demoLoading, setDemoLoading] = useState(false);
 
   const submit = async (e) => {
     e.preventDefault();
@@ -27,35 +28,49 @@ export default function Login() {
   };
 
   const viewDemo = async () => {
-    await login('owner@business.com', 'demo123');
-    show('Logged into demo account');
-    navigate('/dashboard');
+    setDemoLoading(true);
+    try {
+      const biz = await demoLogin();
+      show(`Viewing the live demo for ${biz.name}`);
+      navigate('/dashboard');
+    } catch (err) {
+      show(err.message || 'Could not load demo');
+    } finally {
+      setDemoLoading(false);
+    }
   };
 
   return (
     <div className="landing" style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', background: 'radial-gradient(900px 400px at 50% -10%, var(--accent-soft), #fff)' }}>
       <div className="card" style={{ width: '100%', maxWidth: 380 }}>
-        <div className="brand" style={{ justifyContent: 'center', marginBottom: 8 }}><Logo /><span>ReviewBot</span></div>
+        <div className="brand" style={{ justifyContent: 'center', marginBottom: 8 }}><Logo /><span>Revsy</span></div>
         <h2 style={{ textAlign: 'center', fontSize: 22 }}>Business login</h2>
         <p className="sub" style={{ textAlign: 'center', marginBottom: 18 }}>Sign in to your review dashboard</p>
         <form onSubmit={submit}>
           <div className="field">
             <label>Email</label>
-            <input className="input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+            <input className="input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@yourbusiness.com" required autoFocus />
           </div>
           <div className="field">
             <label>Password</label>
-            <input className="input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+            <input className="input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" required />
           </div>
           <button className="btn" style={{ width: '100%' }} type="submit" disabled={loading}>
             {loading ? 'Signing in…' : 'Sign in'}
           </button>
         </form>
-        <button className="btn ghost" style={{ width: '100%', marginTop: 14, background: 'transparent', borderColor: 'var(--line)', color: var(--ink) }} onClick={viewDemo}>
-          View Demo
+
+        <div className="flex" style={{ alignItems: 'center', gap: 10, margin: '16px 0' }}>
+          <div style={{ flex: 1, height: 1, background: 'var(--line)' }} />
+          <span className="csv-hint">or</span>
+          <div style={{ flex: 1, height: 1, background: 'var(--line)' }} />
+        </div>
+
+        <button type="button" className="btn secondary" style={{ width: '100%' }} onClick={viewDemo} disabled={demoLoading}>
+          <Icon.play width={16} height={16} /> {demoLoading ? 'Loading demo…' : 'View live demo'}
         </button>
-        <div className="csv-hint" style={{ textAlign: 'center', marginTop: 14 }}>
-          New to the product? Try the <b>View Demo</b> button first — no credentials required.
+        <div className="csv-hint" style={{ textAlign: 'center', marginTop: 10 }}>
+          No account needed — explore a fully seeded sample dashboard.
         </div>
       </div>
       {node}

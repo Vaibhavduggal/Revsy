@@ -1,13 +1,33 @@
 import path from 'path';
 import fs from 'fs';
+import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 import { Low } from 'lowdb';
 import { JSONFile } from 'lowdb/node';
-import bcrypt from 'bcryptjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = path.join(__dirname, '..', 'data');
 const DATA_FILE = path.join(DATA_DIR, 'db.json');
+
+// --- Password hashing (scrypt, no extra dependency) ---
+export function hashPassword(password) {
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = crypto.scryptSync(String(password), salt, 64).toString('hex');
+  return `${salt}:${hash}`;
+}
+export function verifyPassword(password, stored) {
+  if (!stored || !stored.includes(':')) return false;
+  const [salt, hash] = stored.split(':');
+  const check = crypto.scryptSync(String(password), salt, 64).toString('hex');
+  try {
+    return crypto.timingSafeEqual(Buffer.from(hash, 'hex'), Buffer.from(check, 'hex'));
+  } catch {
+    return false;
+  }
+}
+export function newToken() {
+  return crypto.randomBytes(24).toString('hex');
+}
 
 // Tiny deterministic PRNG so seeded demo data is stable across resets.
 function mulberry32(seed) {
@@ -53,7 +73,8 @@ function buildSeed() {
     id: 'biz_1',
     name: 'Smash Bros',
     ownerEmail: 'owner@business.com',
-    password: bcrypt.hashSync('demo123', 10),
+    passwordHash: hashPassword('demo123'),
+    isDemo: true,
     googleReviewLink: 'https://g.page/smash-bros-ludhiana/review',
     feedbackLink: 'https://smashbros.example.com/feedback/private',
     address: 'SCF 29 F, Bhai Randhir Singh Nagar, Ludhiana, Punjab 141012',
@@ -64,6 +85,10 @@ function buildSeed() {
     demoMode: false,
     subscriptionStatus: 'trial',
     createdAt: new Date(now - 240 * DAY).toISOString(),
+    // Google Places review sync (set by the client in Settings, or by admin).
+    placeId: '',
+    // WhatsApp Business API connection (set by the admin during client onboarding).
+    whatsapp: { bsp: '', apiKey: '', phoneNumberId: '', status: 'not_connected' },
   };
 
   const customers = [];
@@ -153,6 +178,8 @@ function buildSeed() {
         customerId: cust.id,
         customerName: cust.name,
         rating: 4 + (rng() < 0.5 ? 1 : 0), // 4 or 5 stars
+        text: '',
+        source: 'internal',
         requestId: id,
         sentAt: createdAt.toISOString(),
         createdAt: reviewedAt,
@@ -192,31 +219,22 @@ function buildSeed() {
 
   business.reviewsReceived = reviewsReceived;
 
-  const admin = {
-    id: 'admin_1',
-    name: 'ReviewBot Admin',
-    ownerEmail: 'admin@reviewbot.com',
-    password: bcrypt.hashSync('admin123', 10),
-    googleReviewLink: '',
-    feedbackLink: '',
-    address: '',
-    phone: '',
-    description: 'Platform administrator',
-    messageTemplate: DEFAULT_TEMPLATE,
-    delaySeconds: 7200,
-    demoMode: false,
-    subscriptionStatus: 'active',
-    createdAt: new Date(now - 365 * DAY).toISOString(),
-  };
+  // Default platform admin — change this password after first login (Admin login page).
+  const admins = [
+    { id: 'admin_1', email: 'admin@revsy.app', passwordHash: hashPassword('ChangeMe123!') },
+  ];
 
   return {
-    businesses: [business, admin],
+    businesses: [business],
     customers,
     requests,
     reviews,
     feedback,
     pendingSends: [],
     activities,
+    admins,
+    sessions: [],
+    adminSessions: [],
   };
 }
 
@@ -237,6 +255,21 @@ export async function initDb() {
   if (!DB.data || !DB.data.businesses || DB.data.businesses.length === 0) {
     DB.data = buildSeed();
     await DB.write();
+  } else {
+    // Migrate an older db.json (plaintext password, no admin/session tables) in place.
+    let changed = false;
+    for (const b of DB.data.businesses) {
+      if (!b.passwordHash && b.password) { b.passwordHash = hashPassword(b.password); delete b.password; changed = true; }
+      if (!b.whatsapp) { b.whatsapp = { bsp: '', apiKey: '', phoneNumberId: '', status: 'not_connected' }; changed = true; }
+      if (typeof b.placeId !== 'string') { b.placeId = ''; changed = true; }
+    }
+    if (!DB.data.admins || DB.data.admins.length === 0) {
+      DB.data.admins = [{ id: 'admin_1', email: 'admin@revsy.app', passwordHash: hashPassword('ChangeMe123!') }];
+      changed = true;
+    }
+    if (!DB.data.sessions) { DB.data.sessions = []; changed = true; }
+    if (!DB.data.adminSessions) { DB.data.adminSessions = []; changed = true; }
+    if (changed) await DB.write();
   }
   return DB;
 }

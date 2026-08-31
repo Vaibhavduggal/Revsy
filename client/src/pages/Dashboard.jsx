@@ -113,18 +113,23 @@ export default function Dashboard() {
   const [data, setData] = useState(null);
   const [activity, setActivity] = useState([]);
   const [sentiment, setSentiment] = useState(null);
-  const [failed, setFailed] = useState[];
+  const [failed, setFailed] = useState([]);
   const [retrying, setRetrying] = useState(null);
   const [loading, setLoading] = useState(true);
   const [logOpen, setLogOpen] = useState(false);
+  const [reviewList, setReviewList] = useState({ positive: [], negative: [] });
+  const [syncing, setSyncing] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      const [d, a, an, f] = await Promise.all([api.dashboard(), api.activity(), api.analytics(), api.failedSends()]);
+      const [d, a, an, f, rl] = await Promise.all([
+        api.dashboard(), api.activity(), api.analytics(), api.failedSends(), api.reviewsList(),
+      ]);
       setData(d);
       setActivity(a.activities);
       setSentiment(an.sentiment);
       setFailed(f.failed || []);
+      setReviewList(rl);
     } catch (e) {
       show(e.message);
     } finally {
@@ -139,19 +144,10 @@ export default function Dashboard() {
     setData((d) => ({ ...d, stats: { ...d.stats, totalReceived: r.reviewsReceived, conversionRate: d.stats.totalSent ? Math.round((r.reviewsReceived / d.stats.totalSent) * 1000) / 10 : 0 } }));
     setBusiness((b) => ({ ...b, reviewsReceived: r.reviewsReceived }));
   };
-  const syncGoogleReviews = async () => {
-    const placeId = business?.googlePlaceId;
-    if (!placeId) {
-      show('Please configure a Google Place ID in Settings first');
-      return;
-    }
-    const r = await api.syncGoogleReviews({ placeId, apiKey: business?.googleApiKey || '' });
-    if (r.connected) {
-      show(`Synced ${r.synced} new Google reviews`);
-      load();
-    } else {
-      show(r.error || 'Failed to sync Google reviews');
-    }
+  const dec = async () => {
+    const r = await api.decrementReviews();
+    setData((d) => ({ ...d, stats: { ...d.stats, totalReceived: r.reviewsReceived, conversionRate: d.stats.totalSent ? Math.round((r.reviewsReceived / d.stats.totalSent) * 1000) / 10 : 0 } }));
+    setBusiness((b) => ({ ...b, reviewsReceived: r.reviewsReceived }));
   };
   const retry = async (id) => {
     setRetrying(id);
@@ -163,6 +159,22 @@ export default function Dashboard() {
       show(err.message);
     } finally {
       setRetrying(null);
+    }
+  };
+  const syncGoogle = async () => {
+    setSyncing(true);
+    try {
+      const r = await api.syncGoogleReviews();
+      if (!r.connected) {
+        show(r.message || 'Google Reviews is not connected yet.');
+      } else {
+        show(`Synced — ${r.added} new review${r.added === 1 ? '' : 's'} pulled from Google`);
+        load();
+      }
+    } catch (err) {
+      show(err.message);
+    } finally {
+      setSyncing(false);
     }
   };
 
@@ -196,6 +208,9 @@ export default function Dashboard() {
               <button className="btn green sm" onClick={inc} style={{ padding: '2px 8px' }}>+</button>
             </span>
           </div>
+          <button className="btn ghost sm" style={{ marginTop: 8, padding: '4px 8px' }} onClick={() => setLogOpen(true)}>
+            <Icon.plus width={13} height={13} /> Log a review
+          </button>
         </div>
         <div className="stat">
           <div className="icon"><Icon.rocket width={20} height={20} /></div>
@@ -207,41 +222,80 @@ export default function Dashboard() {
           <div className="label">Avg / week</div>
           <div className="value">{Math.round(stats.totalSent / 8)}</div>
         </div>
-        <div className="stat">
-          <div className="icon"><Icon.sync width={20} height={20} /></div>
-          <div className="label">Sync Google Reviews</div>
-          <div className="value" onClick={syncGoogleReviews} style={{ cursor: business?.googlePlaceId ? 'pointer' : 'default', color: business?.googlePlaceId ? 'var(--accent)' : 'var(--muted)' }} title={business?.googlePlaceId ? 'Sync Google Reviews' : 'Configure Place ID in Settings'}></div>
+      </div>
+
+      <div className="row two" style={{ marginTop: 16 }}>
+        <div className="card">
+          <div className="flex between" style={{ alignItems: 'flex-start' }}>
+            <div>
+              <h3><span className="dot pos" /> Positive reviews</h3>
+              <div className="sub">4★ and above · {reviewList.positive.length} total</div>
+            </div>
+            <button className="btn ghost sm" onClick={syncGoogle} disabled={syncing}>
+              <Icon.star width={13} height={13} /> {syncing ? 'Syncing…' : 'Sync Google Reviews'}
+            </button>
+          </div>
+          <div className="spacer" />
+          {reviewList.positive.length === 0 ? (
+            <div className="empty">No positive reviews yet.</div>
+          ) : (
+            <div className="flex col" style={{ gap: 10, maxHeight: 280, overflowY: 'auto' }}>
+              {reviewList.positive.slice(0, 8).map((r) => (
+                <div key={r.id} style={{ borderBottom: '1px solid var(--line)', paddingBottom: 10 }}>
+                  <div className="flex between">
+                    <b style={{ fontSize: 13 }}>{r.customerName}</b>
+                    <span style={{ color: 'var(--ok)', fontWeight: 700, fontSize: 13 }}>{'★'.repeat(r.rating || 5)}</span>
+                  </div>
+                  {r.text && <div className="muted" style={{ fontSize: 13, marginTop: 4 }}>{r.text}</div>}
+                  <div className="csv-hint" style={{ marginTop: 4 }}>{r.source === 'google' ? 'Google' : 'Internal'} · {timeAgo(r.createdAt)}</div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="card">
+          <h3><span className="dot neg" /> Negative reviews</h3>
+          <div className="sub">Below 4★ · kept private, not sent to Google · {reviewList.negative.length} total</div>
+          <div className="spacer" />
+          {reviewList.negative.length === 0 ? (
+            <div className="empty">No negative feedback yet.</div>
+          ) : (
+            <div className="flex col" style={{ gap: 10, maxHeight: 280, overflowY: 'auto' }}>
+              {reviewList.negative.slice(0, 8).map((r) => (
+                <div key={r.id} style={{ borderBottom: '1px solid var(--line)', paddingBottom: 10 }}>
+                  <div className="flex between">
+                    <b style={{ fontSize: 13 }}>{r.customerName}</b>
+                    {r.rating ? <span style={{ color: 'var(--warn)', fontWeight: 700, fontSize: 13 }}>{'★'.repeat(r.rating)}</span> : <span className="badge opened sm">Private feedback</span>}
+                  </div>
+                  {r.text && <div className="muted" style={{ fontSize: 13, marginTop: 4 }}>{r.text}</div>}
+                  <div className="csv-hint" style={{ marginTop: 4 }}>{r.source === 'google' ? 'Google' : 'Internal'} · {timeAgo(r.createdAt)}</div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
       <div className="row two" style={{ marginTop: 16 }}>
-        <div className="card sentiment-split">
-          <h3>Positive reviews</h3>
-          <div className="sub">Customers who left 4+ star reviews</div>
+        <div className="card sentiment-snap">
+          <h3>Sentiment split</h3>
+          <div className="sub">How customers reacted to the 👍 / 👎 prompt</div>
           <div className="flex" style={{ gap: 20, alignItems: 'center', marginTop: 12 }}>
             <SentimentDonut s={sentiment} />
             <div className="flex col" style={{ gap: 10 }}>
               <div className="flex between" style={{ width: 180 }}><span><span className="dot pos" /> Positive</span><b>{sentiment?.positives ?? 0}</b></div>
               <div className="flex between" style={{ width: 180 }}><span><span className="dot neg" /> Negative</span><b>{sentiment?.negatives ?? 0}</b></div>
               <div className="flex between" style={{ width: 180 }}><span className="muted">Positive rate</span><b style={{ color: 'var(--ok)' }}>{sentiment?.positiveRate ?? 0}%</b></div>
+              <div className="flex between" style={{ width: 180 }}><span className="muted">Kept off Google</span><b style={{ color: 'var(--warn)' }}>{sentiment?.keptOffGoogleThisMonth ?? 0}</b></div>
             </div>
           </div>
         </div>
         <div className="card">
-          <h3>Negative reviews</h3>
-          <div className="sub">Customers who left below 4 star reviews (kept private)</div>
-          <div className="flex col" style={{ gap: 10 }}>
-            <div className="flex between" style={{ width: 180 }}><span><span className="dot neg" /> Negative count</span><b>{sentiment?.keptOffGoogleThisMonth ?? 0}</b></div>
-            <div className="flex between" style={{ width: 180 }}><span className="muted">Kept off Google</span><b style={{ color: 'var(--warn)' }}>{sentiment?.keptOffGoogleThisMonth ?? 0}</b></div>
-          </div>
+          <h3>Reviews per week</h3>
+          <div className="sub">Last 8 weeks</div>
+          <div className="spacer" />
+          <BarChart weekly={weekly} />
         </div>
-      </div>
-
-      <div className="card mb" style={{ marginTop: 16 }}>
-        <h3>Reviews per week</h3>
-        <div className="sub">Last 8 weeks</div>
-        <div className="spacer" />
-        <BarChart weekly={weekly} />
       </div>
 
       <div className="card mb" style={{ marginTop: 16 }}>
