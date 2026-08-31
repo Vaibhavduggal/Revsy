@@ -1,26 +1,25 @@
-const TOKEN_KEY = 'reviewbot_token';
-const ADMIN_TOKEN_KEY = 'reviewbot_admin_token';
-
 export function getToken() {
-  return localStorage.getItem(TOKEN_KEY);
+  return localStorage.getItem('reviewbot_token');
 }
 export function setToken(t) {
-  if (t) localStorage.setItem(TOKEN_KEY, t);
-  else localStorage.removeItem(TOKEN_KEY);
+  if (t) localStorage.setItem('reviewbot_token', t);
+  else localStorage.removeItem('reviewbot_token');
 }
 export function getAdminToken() {
-  return localStorage.getItem(ADMIN_TOKEN_KEY);
+  return localStorage.getItem('reviewbot_admin_token');
 }
 export function setAdminToken(t) {
-  if (t) localStorage.setItem(ADMIN_TOKEN_KEY, t);
-  else localStorage.removeItem(ADMIN_TOKEN_KEY);
+  if (t) localStorage.setItem('reviewbot_admin_token', t);
+  else localStorage.removeItem('reviewbot_admin_token');
 }
+
+const API_BASE = import.meta.env.VITE_API_URL || '';
 
 async function baseRequest(method, path, body, tokenGetter) {
   const headers = { 'Content-Type': 'application/json' };
   const token = tokenGetter();
   if (token) headers.Authorization = `Bearer ${token}`;
-  const res = await fetch(`/api${path}`, {
+  const res = await fetch(`${API_BASE}${path}`, {
     method,
     headers,
     body: body ? JSON.stringify(body) : undefined,

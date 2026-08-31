@@ -1,22 +1,20 @@
 {
-  "name": "review-bot-saas",
-  "version": "1.0.0",
+  "name": "review-bot-client",
   "private": true,
-  "description": "Review collection SaaS.",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "ReviewBot Vite + React Frontend",
   "scripts": {
-    "dev": "concurrently -n server,client -c green,cyan \"npm:dev:server\" \"npm:dev:client\"",
-    "dev:server": "npm --prefix server run dev",
-    "dev:client": "npm --prefix client run dev",
-    "build": "npm --prefix client run build"
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
   },
   "dependencies": {
-    "next": "14.2.4",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "@supabase/supabase-js": "^2.49.4",
-    "bcryptjs": "^2.4.3"
+    "react-dom": "^18.3.1"
   },
   "devDependencies": {
-    "concurrently": "^9.1.2"
+    "vite": "^5.2.0",
+    "@vitejs/plugin-react": "^4.2.1"
   }
 }
