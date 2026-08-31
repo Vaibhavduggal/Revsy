@@ -1,17 +1,18 @@
-import { useNavigate } from 'react-router-dom';
-import { Icon, Logo } from '../components/Icons.jsx';
+export const dynamic = 'force-dynamic';
+import { useRouter } from 'next/router';
+import { Icon, Logo } from '../src/components/Icons.jsx';
 
 const PRICE = 999;
 
 export default function Landing() {
-  const navigate = useNavigate();
+  const router = useRouter();
   return (
     <div className="landing">
       <header className="land-top">
         <div className="brand"><Logo /><span>ReviewBot</span></div>
         <div className="flex" style={{ gap: 10 }}>
-          <button className="btn secondary sm" onClick={() => navigate('/login')}>Log in</button>
-          <button className="btn sm" onClick={() => navigate('/login')}>Start Free Trial</button>
+          <button className="btn secondary sm" onClick={() => router.push('/login')}>Log in</button>
+          <button className="btn sm" onClick={() => router.push('/login')}>Start Free Trial</button>
         </div>
       </header>
 
@@ -23,10 +24,10 @@ export default function Landing() {
           visitors into 5-star Google reviews — no apps, no APIs, no headaches.
         </p>
         <div className="cta-row">
-          <button className="btn" onClick={() => navigate('/login')}>
+          <button className="btn" onClick={() => router.push('/login')}>
             <Icon.rocket width={18} height={18} /> Start Free Trial
           </button>
-          <button className="btn secondary" onClick={() => navigate('/login')}>See Demo</button>
+          <button className="btn secondary" onClick={() => router.push('/login')}>See Demo</button>
         </div>
       </section>
 
@@ -61,7 +62,7 @@ export default function Landing() {
             <li>CSV customer import</li>
             <li>Activity feed & delivery tracking</li>
           </ul>
-          <button className="btn" style={{ width: '100%' }} onClick={() => navigate('/login')}>
+          <button className="btn" style={{ width: '100%' }} onClick={() => router.push('/login')}>
             <Icon.rocket width={18} height={18} /> Start Free Trial
           </button>
         </div>

@@ -1,14 +1,15 @@
+export const dynamic = 'force-dynamic';
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { api } from '../api.js';
-import { useAuth } from '../auth-context.jsx';
-import { useShell } from '../components/ShellContext.jsx';
-import { Icon } from '../components/Icons.jsx';
-import { Modal } from '../components/Modal.jsx';
-import { PhoneMockup } from '../components/PhoneMockup.jsx';
-import { WhatsAppConversation } from '../components/WhatsAppConversation.jsx';
-import { useToast } from '../components/useToast.jsx';
-import { MESSAGE_PRESETS, renderTemplate, TEMPLATE_VARS } from '../utils/presets.js';
-import { STAGES, NEXT_ACTION } from '../utils/pipeline.js';
+import { api } from '../src/api.js';
+import { useAuth } from '../src/auth-context.jsx';
+import { useShell } from '../src/components/ShellContext.jsx';
+import { Icon } from '../src/components/Icons.jsx';
+import { Modal } from '../src/components/Modal.jsx';
+import { PhoneMockup } from '../src/components/PhoneMockup.jsx';
+import { WhatsAppConversation } from '../src/components/WhatsAppConversation.jsx';
+import { useToast } from '../src/components/useToast.jsx';
+import { MESSAGE_PRESETS, renderTemplate, TEMPLATE_VARS } from '../src/utils/presets.js';
+import { STAGES, NEXT_ACTION } from '../src/utils/pipeline.js';
 
 function initials(name) {
   return (name || '?').trim().split(/\s+/).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
@@ -81,6 +82,7 @@ function CustomerDrawer({ customer, business, onClose, onChanged }) {
   const [busy, setBusy] = useState(false);
   const [feedbackText, setFeedbackText] = useState('');
   const stage = detail?.customer.stage || customer.stage;
+  const next = NEXT_ACTION?.[stage];
 
   const load = useCallback(async () => {
     const r = await api.customer(customer.id);
@@ -200,6 +202,10 @@ export default function Customers() {
   const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [openId, setOpenId] = useState(null);
+  const [importOpen, setImportOpen] = useState(false);
+  const [csvText, setCsvText] = useState('');
+
+  const openCustomer = openId ? customers.find((c) => c.id === openId) : null;
 
   const load = useCallback(async () => {
     try {
@@ -257,7 +263,7 @@ export default function Customers() {
           {sentiment === 'all' ? (
             <button className={`btn ghost sm ${sentiment === 'all' ? 'active' : ''}`} disabled>All sentiment</button>
           ) : (
-            <button className="btn ghost sm active" onClick={() => {}})>Filtered: {sentiment}</button>
+            <button className="btn ghost sm active" onClick={() => {}}>Filtered: {sentiment}</button>
           )}
           <button className="btn secondary" onClick={() => setImportOpen(true)}><Icon.upload width={16} height={16} /> Import CSV</button>
         </div>

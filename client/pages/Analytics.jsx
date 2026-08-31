@@ -1,8 +1,9 @@
+export const dynamic = 'force-dynamic';
 import { useState, useEffect, useCallback } from 'react';
-import { api } from '../api.js';
-import { useAuth } from '../auth-context.jsx';
-import { Icon } from '../components/Icons.jsx';
-import { useToast } from '../components/useToast.jsx';
+import { api } from '../src/api.js';
+import { useAuth } from '../src/auth-context.jsx';
+import { Icon } from '../src/components/Icons.jsx';
+import { useToast } from '../src/components/useToast.jsx';
 
 function LineChart({ weeks }) {
   const W = 640, H = 220, pad = 28;

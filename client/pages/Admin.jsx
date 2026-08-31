@@ -1,7 +1,8 @@
+export const dynamic = 'force-dynamic';
 import { useState, useEffect } from 'react';
-import { api } from '../api.js';
-import { Icon } from '../components/Icons.jsx';
-import { useToast } from '../components/useToast.jsx';
+import { api } from '../src/api.js';
+import { Icon } from '../src/components/Icons.jsx';
+import { useToast } from '../src/components/useToast.jsx';
 
 function fmtDate(iso) {
   return new Date(iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });

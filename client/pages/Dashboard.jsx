@@ -1,9 +1,10 @@
+export const dynamic = 'force-dynamic';
 import { useState, useEffect, useCallback } from 'react';
-import { api } from '../api.js';
-import { useAuth } from '../auth-context.jsx';
-import { Icon } from '../components/Icons.jsx';
-import { Modal } from '../components/Modal.jsx';
-import { useToast } from '../components/useToast.jsx';
+import { api } from '../src/api.js';
+import { useAuth } from '../src/auth-context.jsx';
+import { Icon } from '../src/components/Icons.jsx';
+import { Modal } from '../src/components/Modal.jsx';
+import { useToast } from '../src/components/useToast.jsx';
 
 function StatusBadge({ status }) {
   const map = { Sent: 'sent', Opened: 'opened', Reviewed: 'reviewed', Scheduled: 'scheduled' };
@@ -113,7 +114,7 @@ export default function Dashboard() {
   const [data, setData] = useState(null);
   const [activity, setActivity] = useState([]);
   const [sentiment, setSentiment] = useState(null);
-  const [failed, setFailed] = useState[];
+  const [failed, setFailed] = useState([]);
   const [retrying, setRetrying] = useState(null);
   const [loading, setLoading] = useState(true);
   const [logOpen, setLogOpen] = useState(false);

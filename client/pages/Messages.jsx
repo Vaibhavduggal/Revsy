@@ -1,11 +1,12 @@
+export const dynamic = 'force-dynamic';
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { api } from '../api.js';
-import { useAuth } from '../auth-context.jsx';
-import { useShell } from '../components/ShellContext.jsx';
-import { Icon } from '../components/Icons.jsx';
-import { WhatsAppConversation } from '../components/WhatsAppConversation.jsx';
-import { useToast } from '../components/useToast.jsx';
-import { NEXT_ACTION } from '../utils/pipeline.js';
+import { api } from '../src/api.js';
+import { useAuth } from '../src/auth-context.jsx';
+import { useShell } from '../src/components/ShellContext.jsx';
+import { Icon } from '../src/components/Icons.jsx';
+import { WhatsAppConversation } from '../src/components/WhatsAppConversation.jsx';
+import { useToast } from '../src/components/useToast.jsx';
+import { NEXT_ACTION } from '../src/utils/pipeline.js';
 
 function initials(name) {
   return (name || '?').trim().split(/\s+/).slice(0, 2).map((w) => w[0]).join('').toUpperCase();

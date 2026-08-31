@@ -1,12 +1,13 @@
+export const dynamic = 'force-dynamic';
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../auth-context.jsx';
-import { Icon, Logo } from '../components/Icons.jsx';
-import { useToast } from '../components/useToast.jsx';
+import { useRouter } from 'next/router';
+import { useAuth } from '../src/auth-context.jsx';
+import { Icon, Logo } from '../src/components/Icons.jsx';
+import { useToast } from '../src/components/useToast.jsx';
 
 export default function Login() {
   const { login } = useAuth();
-  const navigate = useNavigate();
+  const router = useRouter();
   const { show, node } = useToast();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -18,7 +19,7 @@ export default function Login() {
     try {
       const biz = await login(email, password);
       show(`Welcome back, ${biz.name}!`);
-      navigate('/dashboard');
+      router.push('/dashboard');
     } catch (err) {
       show(err.message || 'Login failed');
     } finally {
@@ -29,7 +30,7 @@ export default function Login() {
   const viewDemo = async () => {
     await login('owner@business.com', 'demo123');
     show('Logged into demo account');
-    navigate('/dashboard');
+    router.push('/dashboard');
   };
 
   return (
@@ -51,7 +52,7 @@ export default function Login() {
             {loading ? 'Signing in…' : 'Sign in'}
           </button>
         </form>
-        <button className="btn ghost" style={{ width: '100%', marginTop: 14, background: 'transparent', borderColor: 'var(--line)', color: var(--ink) }} onClick={viewDemo}>
+        <button className="btn ghost" style={{ width: '100%', marginTop: 14, background: 'transparent', borderColor: 'var(--line)', color: 'var(--ink)' }} onClick={viewDemo}>
           View Demo
         </button>
         <div className="csv-hint" style={{ textAlign: 'center', marginTop: 14 }}>

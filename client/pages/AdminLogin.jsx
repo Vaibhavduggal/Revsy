@@ -1,11 +1,12 @@
+export const dynamic = 'force-dynamic';
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../auth-context.jsx';
-import { useToast } from '../components/useToast.jsx';
+import { useRouter } from 'next/router';
+import { useAuth } from '../src/auth-context.jsx';
+import { useToast } from '../src/components/useToast.jsx';
 
 export default function AdminLogin() {
   const { loginAdmin } = useAuth();
-  const navigate = useNavigate();
+  const router = useRouter();
   const { show, node } = useToast();
   const [email, setEmail] = useState('admin@reviewbot.com');
   const [password, setPassword] = useState('admin123');
@@ -17,7 +18,7 @@ export default function AdminLogin() {
     try {
       await loginAdmin(email, password);
       show('Welcome, Admin!');
-      navigate('/admin');
+      router.push('/admin');
     } catch (err) {
       show(err.message || 'Admin login failed');
     } finally {

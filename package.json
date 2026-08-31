@@ -2,14 +2,19 @@
   "name": "review-bot-saas",
   "version": "1.0.0",
   "private": true,
-  "description": "Demo review-collection SaaS for Indian burger restaurants (simulated WhatsApp, local SQLite-free storage).",
+  "description": "Review collection SaaS.",
   "scripts": {
     "dev": "concurrently -n server,client -c green,cyan \"npm:dev:server\" \"npm:dev:client\"",
     "dev:server": "npm --prefix server run dev",
     "dev:client": "npm --prefix client run dev",
-    "install:all": "npm install && npm --prefix server install && npm --prefix client install",
-    "build": "npm --prefix client run build",
-    "start": "npm --prefix server run start"
+    "build": "npm --prefix client run build"
+  },
+  "dependencies": {
+    "next": "14.2.4",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "@supabase/supabase-js": "^2.49.4",
+    "bcryptjs": "^2.4.3"
   },
   "devDependencies": {
     "concurrently": "^9.1.2"

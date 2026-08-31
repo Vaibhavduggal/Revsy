@@ -1,10 +1,11 @@
+export const dynamic = 'force-dynamic';
 import { useState, useEffect } from 'react';
-import { api } from '../api.js';
-import { useAuth } from '../auth-context.jsx';
-import { Icon } from '../components/Icons.jsx';
-import { Toggle } from '../components/Toggle.jsx';
-import { PhoneMockup } from '../components/PhoneMockup.jsx';
-import { useToast } from '../components/useToast.jsx';
+import { api } from '../src/api.js';
+import { useAuth } from '../src/auth-context.jsx';
+import { Icon } from '../src/components/Icons.jsx';
+import { Toggle } from '../src/components/Toggle.jsx';
+import { PhoneMockup } from '../src/components/PhoneMockup.jsx';
+import { useToast } from '../src/components/useToast.jsx';
 
 const TEMPLATE_VARS = '[customer name], [business name], [google review link]';
 

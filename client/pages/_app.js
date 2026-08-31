@@ -1,10 +1,14 @@
-import './globals.css'
-import type { ReactNode } from 'react'
-import { useAuth } from '../src/auth-context'
+import '../src/styles.css'
+import '../src/styles-crm.css'
+import { AuthProvider } from '../src/auth-context'
+import { ShellProvider } from '../src/components/ShellContext'
 
-function MyApp({ Component, pageProps }: { Component: React.ComponentType, pageProps: any }) {
-  const { login, loginAdmin, logout } = useAuth()
-  return <Component {...pageProps} />
+export default function MyApp({ Component, pageProps }) {
+  return (
+    <AuthProvider>
+      <ShellProvider>
+        <Component {...pageProps} />
+      </ShellProvider>
+    </AuthProvider>
+  )
 }
-
-export default MyApp
