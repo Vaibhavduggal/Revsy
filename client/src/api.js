@@ -19,7 +19,7 @@ async function baseRequest(method, path, body, tokenGetter) {
   const headers = { 'Content-Type': 'application/json' };
   const token = tokenGetter();
   if (token) headers.Authorization = `Bearer ${token}`;
-  const res = await fetch(`${API_BASE}${path}`, {
+  const res = await fetch(`${API_BASE}/api${path}`, {
     method,
     headers,
     body: body ? JSON.stringify(body) : undefined,

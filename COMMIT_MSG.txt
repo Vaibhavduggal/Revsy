@@ -1,1 +1,1 @@
-fix: health check route before SPA fallback, clean server.js rewrite
+fix: add /api prefix to all client API calls
