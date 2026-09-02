@@ -15,38 +15,35 @@ async function main() {
   const app = express();
   app.use(cors());
   app.use(express.json());
+
+  app.get('/api/health', (_req, res) => res.json({ ok: true }));
   app.use('/api', router);
 
-  // Serve built Vite frontend from dist/
-  const distPath = path.join(__dirname, '../client/dist');
+  const distPath = path.join(__dirname, '..', '..', 'client', 'dist');
   app.use(express.static(distPath));
 
-  // SPA fallback: serve index.html for any unmatched routes
   app.get('*', (req, res) => {
     res.sendFile(path.join(distPath, 'index.html'));
   });
 
-  app.get('/api/health', (_req, res) => res.json({ ok: true }));
-
   app.listen(PORT, () => {
-    console.log(`API server running on http://localhost:${PORT}`);
-    // Re-arm any pending sends stored on disk from a previous run.
+    console.log('API server running on http://localhost:' + PORT);
     resumeScheduledSends();
     resumePendingSends();
-    // Start the cron-style poller (every 60s) and expose a manual nudge.
     startSendPoller(60000);
     global.__reviewbotPollNow = () => {
       const db = getDb();
-      const due = db.data.pendingSends.filter((s) => s.status === 'pending' && s.scheduledTime <= new Date().toISOString());
+      const due = db.data.pendingSends.filter(
+        (s) => s.status === 'pending' && s.scheduledTime <= new Date().toISOString()
+      );
       (async () => {
         for (const row of due) {
-          // Defer to the queue processor via a tiny internal import to avoid cycle.
           const { processDueNow } = await import('./queue.js');
           await processDueNow(row);
         }
         await db.write();
       })();
-    });
+    };
   });
 }
 
