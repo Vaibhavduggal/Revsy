@@ -15,9 +15,18 @@ async function main() {
   const app = express();
   app.use(cors());
   app.use(express.json());
+  app.use('/api', router);
+
+  // Serve built Vite frontend from dist/
+  const distPath = path.join(__dirname, '../client/dist');
+  app.use(express.static(distPath));
+
+  // SPA fallback: serve index.html for any unmatched routes
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(distPath, 'index.html'));
+  });
 
   app.get('/api/health', (_req, res) => res.json({ ok: true }));
-  app.use('/api', router);
 
   app.listen(PORT, () => {
     console.log(`API server running on http://localhost:${PORT}`);
@@ -37,7 +46,7 @@ async function main() {
         }
         await db.write();
       })();
-    };
+    });
   });
 }
 
