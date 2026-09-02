@@ -4,7 +4,7 @@ A local-first, full-stack demo of a review-collection SaaS, branded for **Smash 
 smash-burger restaurant in Ludhiana, Punjab. It pitches the business of automatically
 collecting Google reviews by following up with customers over **simulated** WhatsApp.
 
-> Everything runs locally. No API keys, no paid services, no real messages are ever sent.
+> **Everything runs locally.** No API keys, no paid services, no real messages are ever sent.
 > Outgoing WhatsApp messages are rendered as a phone-frame mockup inside the UI.
 
 ## Stack
@@ -16,9 +16,8 @@ collecting Google reviews by following up with customers over **simulated** What
 ## Run it
 
 ```bash
-npm install          # installs concurrently (root)
-npm run install:all  # installs server + client deps
-npm run dev          # starts API (4000) + client (5173) together
+npm install            # installs root deps + client + server deps via workspaces
+npm run dev            # starts API (4000) + client (5173) together
 ```
 
 Open **http://localhost:5173**.
@@ -57,7 +56,7 @@ Call `POST /api/reset-db` (authenticated) to regenerate the seed, or simply dele
 
 ```
 .
-├── package.json          # runs server + client together
+├── package.json          # runs server + client together (workspaces)
 ├── server/               # Express + lowdb API
 │   ├── src/db.js         # lowdb setup + seed
 │   ├── src/routes.js     # API routes + simulated send scheduler
