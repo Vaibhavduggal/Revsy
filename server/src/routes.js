@@ -1,13 +1,10 @@
 import { Router } from 'express';
-import { getDb, getBusiness, renderTemplate, hashPassword, verifyPassword, newToken, defaultTemplate } from './db.js';
+import { getDb, getBusiness, renderTemplate, hashPassword, verifyPassword, newToken, defaultTemplate, mapBusiness, mapCustomer, mapRequest, mapReview, mapFeedback, mapPendingSend, mapActivity } from './db.js';
 import { auth, adminAuth, recordActivity, publicBusiness } from './auth.js';
 import { enqueueSend, retrySend, getFailedSends } from './queue.js';
 
 const router = Router();
 
-const STAGES = ['to_send', 'sent', 'opened', 'positive', 'negative', 'reviewed'];
-
-// Copy of the seeded quick-reply follow-up copy so the activity feed stays consistent.
 function positiveFollowUp(link) {
   return `Awesome! 🙌 If you have 30 seconds, please leave us a Google review: ${link}`;
 }
@@ -23,27 +20,12 @@ function newId(prefix) {
   return `${prefix}_${Date.now()}_${Math.floor(Math.random() * 1e6)}`;
 }
 
-// Starter message tone presets the owner can pick from before customizing.
 export const MESSAGE_PRESETS = [
-  {
-    id: 'casual',
-    label: 'Casual',
-    template: 'Hey [customer name]! Hope you enjoyed [business name] today 😄 Drop us a quick Google review if you can: [google review link]',
-  },
-  {
-    id: 'warm',
-    label: 'Warm / Thankful',
-    template: 'Hi [customer name], thank you so much for visiting [business name]! We would be grateful if you shared your experience: [google review link]',
-  },
-  {
-    id: 'first_time',
-    label: 'First-time visitor',
-    template: 'Welcome to [business name], [customer name]! We hope it was love at first bite. If so, a 30-second Google review would mean the world: [google review link]',
-  },
+  { id: 'casual', label: 'Casual', template: 'Hey [customer name]! Hope you enjoyed [business name] today 😄 Drop us a quick Google review if you can: [google review link]' },
+  { id: 'warm', label: 'Warm / Thankful', template: 'Hi [customer name], thank you so much for visiting [business name]! We would be grateful if you shared your experience: [google review link]' },
+  { id: 'first_time', label: 'First-time visitor', template: 'Welcome to [business name], [customer name]! We hope it was love at first bite. If so, a 30-second Google review would mean the world: [google review link]' },
 ];
 
-// Render the message a customer would receive.
-// Uses the customer's custom override if set, otherwise the global template.
 export function render(business, customer) {
   const template = (customer && customer.customMessage && customer.customMessage.trim())
     ? customer.customMessage
@@ -55,48 +37,23 @@ export function render(business, customer) {
   });
 }
 
-function latestRequest(db, customerId) {
-  return db.data.requests
-    .filter((r) => r.customerId === customerId)
-    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0];
-}
-
-// Build the WhatsApp conversation bubbles for a customer given their stage.
-function renderConversation(business, customer, request) {
+function renderConversation(business, customer, request, feedbackForCustomer) {
   const bubbles = [];
   const initialMsg = (request && request.message) ? request.message : render(business, customer);
   if (request && request.status !== 'Scheduled') {
     bubbles.push({ from: 'business', type: 'text', text: initialMsg });
   }
-  const awaitingReaction = customer.stage === 'opened';
-  if (awaitingReaction) {
-    bubbles.push({
-      from: 'business',
-      type: 'quickreply',
-      text: 'How was your experience?',
-      buttons: [
-        { label: '👍 Great', value: 'positive' },
-        { label: '👎 Not great', value: 'negative' },
-      ],
-    });
+  if (customer.stage === 'opened') {
+    bubbles.push({ from: 'business', type: 'quickreply', text: 'How was your experience?', buttons: [{ label: '👍 Great', value: 'positive' }, { label: '👎 Not great', value: 'negative' }] });
   }
   if (customer.sentiment === 'positive') {
     bubbles.push({ from: 'customer', type: 'reaction', text: '👍 Great' });
-    bubbles.push({
-      from: 'business',
-      type: 'link',
-      text: positiveFollowUp(business.googleReviewLink),
-    });
+    bubbles.push({ from: 'business', type: 'link', text: positiveFollowUp(business.googleReviewLink) });
   } else if (customer.sentiment === 'negative') {
     bubbles.push({ from: 'customer', type: 'reaction', text: '👎 Not great' });
-    bubbles.push({
-      from: 'business',
-      type: 'link',
-      text: negativeFollowUp(business.feedbackLink),
-    });
-    const fb = db.data.feedback.find((f) => f.customerId === customer.id);
-    if (fb && fb.complaint) {
-      bubbles.push({ from: 'customer', type: 'text', text: fb.complaint, private: true });
+    bubbles.push({ from: 'business', type: 'link', text: negativeFollowUp(business.feedbackLink) });
+    if (feedbackForCustomer && feedbackForCustomer.complaint) {
+      bubbles.push({ from: 'customer', type: 'text', text: feedbackForCustomer.complaint, private: true });
     }
   }
   if (customer.stage === 'reviewed') {
@@ -105,44 +62,24 @@ function renderConversation(business, customer, request) {
   return bubbles;
 }
 
-// Queue a simulated WhatsApp send for a customer, persisted in pending_sends so it
-// survives server restarts. The poller (queue.startSendPoller) delivers it after
-// the configured delay (or 10s in demo mode).
-function enqueueCustomerSend(db, business, customer) {
+function enqueueCustomerSend(business, customer) {
   const message = render(business, customer);
   const delaySeconds = effectiveDelay(business);
-  return enqueueSend(db, {
-    businessId: business.id,
-    customerId: customer.id,
-    phone: customer.phone,
-    message,
-    delaySeconds,
-  });
+  return enqueueSend({ businessId: business.id, customerId: customer.id, phone: customer.phone, message, delaySeconds });
 }
 
-// Immediately send (used by "Send now"): enqueue with a 0s delay so it is delivered
-// on the next poller tick, then nudge the poller to fire immediately for a snappy demo.
-async function performSendNow(db, business, customer, request) {
-  request.message = render(business, customer);
-  await db.write();
-  const message = request.message;
-  const row = enqueueSend(db, {
-    businessId: business.id,
-    customerId: customer.id,
-    phone: customer.phone,
-    message,
-    delaySeconds: 0,
-  });
+async function performSendNow(business, customer, request) {
+  const db = getDb();
+  const message = render(business, customer);
+  await db.from('requests').update({ message }).eq('id', request.id);
+  await enqueueSend({ businessId: business.id, customerId: customer.id, phone: customer.phone, message, delaySeconds: 0 });
   if (global.__reviewbotPollNow) global.__reviewbotPollNow();
-  return row;
 }
 
-// On boot, re-arm any pending rows from a previous run (poller handles delivery).
-export function resumeScheduledSends() {
-  // No-op: pending_sends are persisted on disk and resumed by queue.resumePendingSends().
-}
+export function resumeScheduledSends() {}
 
-function buildWeekly(db, businessId) {
+async function buildWeekly(businessId) {
+  const db = getDb();
   const weeks = [];
   const now = new Date();
   for (let i = 7; i >= 0; i--) {
@@ -152,38 +89,61 @@ function buildWeekly(db, businessId) {
     const start = new Date(end);
     start.setDate(start.getDate() - 7);
     const label = `W${weeks.length + 1}`;
-    const count = db.data.requests.filter((r) => {
-      const d = new Date(r.createdAt);
-      return r.businessId === businessId && d >= start && d < end;
-    }).length;
-    weeks.push({ label, count });
+    const { count } = await db.rpc('count_requests_in_range', { p_business_id: businessId, p_start: start.toISOString(), p_end: end.toISOString() }).single().then(r => r.data || { count: 0 }).catch(() => ({ count: 0 }));
+    weeks.push({ label, count: count || 0 });
   }
   return weeks;
+}
+
+// Helper: fetch all requests for a business
+async function getRequestsForBusiness(businessId) {
+  const db = getDb();
+  const { data } = await db.from('requests').select('*').eq('business_id', businessId);
+  return (data || []).map(mapRequest);
+}
+
+// Helper: fetch all customers for a business
+async function getCustomersForBusiness(businessId) {
+  const db = getDb();
+  const { data } = await db.from('customers').select('*').eq('business_id', businessId);
+  return (data || []).map(mapCustomer);
+}
+
+// Helper: fetch all reviews for a business
+async function getReviewsForBusiness(businessId) {
+  const db = getDb();
+  const { data } = await db.from('reviews').select('*').eq('business_id', businessId);
+  return (data || []).map(mapReview);
+}
+
+// Helper: fetch all feedback for a business
+async function getFeedbackForBusiness(businessId) {
+  const db = getDb();
+  const { data } = await db.from('feedback').select('*').eq('business_id', businessId);
+  return (data || []).map(mapFeedback);
 }
 
 // --- Auth ---
 router.post('/login', async (req, res) => {
   const { email, password } = req.body || {};
   const db = getDb();
-  const business = db.data.businesses.find((b) => b.ownerEmail === email);
-  if (!business || !verifyPassword(password || '', business.passwordHash)) {
+  const { data: bizData } = await db.from('businesses').select('*').eq('owner_email', email).single();
+  if (!bizData || !verifyPassword(password || '', bizData.password_hash)) {
     return res.status(401).json({ error: 'Invalid email or password' });
   }
+  const business = mapBusiness(bizData);
   const token = newToken();
-  db.data.sessions.push({ token, businessId: business.id, createdAt: new Date().toISOString() });
-  await db.write();
+  await db.from('sessions').insert({ token, business_id: business.id, created_at: new Date().toISOString() });
   res.json({ token, business: publicBusiness(business) });
 });
 
-// Demo button on the login page — no credentials needed, always logs into the seeded
-// demo business (isDemo: true) so a prospect can see the product before they sign up.
 router.post('/login/demo', async (req, res) => {
   const db = getDb();
-  const business = db.data.businesses.find((b) => b.isDemo);
-  if (!business) return res.status(404).json({ error: 'Demo account not available' });
+  const { data: bizData } = await db.from('businesses').select('*').eq('is_demo', true).single();
+  if (!bizData) return res.status(404).json({ error: 'Demo account not available' });
+  const business = mapBusiness(bizData);
   const token = newToken();
-  db.data.sessions.push({ token, businessId: business.id, createdAt: new Date().toISOString() });
-  await db.write();
+  await db.from('sessions').insert({ token, business_id: business.id, created_at: new Date().toISOString() });
   res.json({ token, business: publicBusiness(business) });
 });
 
@@ -191,613 +151,357 @@ router.post('/logout', auth, async (req, res) => {
   const db = getDb();
   const header = req.headers.authorization || '';
   const token = header.startsWith('Bearer ') ? header.slice(7) : '';
-  db.data.sessions = db.data.sessions.filter((s) => s.token !== token);
-  await db.write();
+  await db.from('sessions').delete().eq('token', token);
   res.json({ ok: true });
 });
 
-// --- Admin auth (separate from client business auth entirely) ---
 router.post('/admin/login', async (req, res) => {
   const { email, password } = req.body || {};
   const db = getDb();
-  const admin = db.data.admins.find((a) => a.email === email);
-  if (!admin || !verifyPassword(password || '', admin.passwordHash)) {
+  const { data } = await db.from('admins').select('*').eq('email', email).single();
+  if (!data || !verifyPassword(password || '', data.password_hash)) {
     return res.status(401).json({ error: 'Invalid email or password' });
   }
   const token = newToken();
-  db.data.adminSessions.push({ token, adminId: admin.id, createdAt: new Date().toISOString() });
-  await db.write();
-  res.json({ token, admin: { id: admin.id, email: admin.email } });
+  await db.from('admin_sessions').insert({ token, admin_id: data.id, created_at: new Date().toISOString() });
+  res.json({ token, admin: { id: data.id, email: data.email } });
 });
 
 router.post('/admin/logout', adminAuth, async (req, res) => {
   const db = getDb();
   const header = req.headers.authorization || '';
   const token = header.startsWith('Bearer ') ? header.slice(7) : '';
-  db.data.adminSessions = db.data.adminSessions.filter((s) => s.token !== token);
-  await db.write();
+  await db.from('admin_sessions').delete().eq('token', token);
   res.json({ ok: true });
 });
 
 // --- Dashboard ---
-router.get('/dashboard', auth, (req, res) => {
-  const db = getDb();
+router.get('/dashboard', auth, async (req, res) => {
   const biz = req.business;
-  const reqs = db.data.requests.filter((r) => r.businessId === biz.id);
+  const reqs = await getRequestsForBusiness(biz.id);
   const sent = reqs.filter((r) => r.status !== 'Scheduled').length;
   const received = biz.reviewsReceived || 0;
-  const failedSends = getFailedSends(db, biz.id).map((s) => ({
-    id: s.id,
-    customerId: s.customerId,
-    customerName: db.data.customers.find((c) => c.id === s.customerId)?.name || s.phone,
-    phone: s.phone,
-    error: s.error,
-    retryCount: s.retryCount,
+  const failedSendsRaw = await getFailedSends(biz.id);
+  const customersList = await getCustomersForBusiness(biz.id);
+  const customerMap = new Map(customersList.map(c => [c.id, c]));
+  const failedSends = failedSendsRaw.map((s) => ({
+    id: s.id, customerId: s.customerId, customerName: customerMap.get(s.customerId)?.name || s.phone,
+    phone: s.phone, error: s.error, retryCount: s.retryCount,
   }));
   const recent = [...reqs]
     .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
     .slice(0, 10)
     .map((r) => {
-      const cust = db.data.customers.find((c) => c.id === r.customerId);
-      return {
-        id: r.id,
-        customerName: r.customerName,
-        phone: r.phone,
-        status: r.status,
-        reaction: r.reaction || null,
-        hasCustomMessage: !!(cust && cust.customMessage && cust.customMessage.trim()),
-        createdAt: r.createdAt,
-      };
+      const cust = customerMap.get(r.customerId);
+      return { id: r.id, customerName: r.customerName, phone: r.phone, status: r.status, reaction: r.reaction || null, hasCustomMessage: !!(cust && cust.customMessage && cust.customMessage.trim()), createdAt: r.createdAt };
     });
   res.json({
-    stats: {
-      totalSent: sent,
-      totalReceived: received,
-      conversionRate: sent ? Math.round((received / sent) * 1000) / 10 : 0,
-    },
-    weekly: buildWeekly(db, biz.id),
-    recent,
-    failedSends,
+    stats: { totalSent: sent, totalReceived: received, conversionRate: sent ? Math.round((received / sent) * 1000) / 10 : 0 },
+    weekly: await buildWeekly(biz.id),
+    recent, failedSends,
   });
 });
 
 // --- Customers ---
-router.get('/customers', auth, (req, res) => {
-  const db = getDb();
-  const list = db.data.customers
-    .filter((c) => c.businessId === req.business.id)
-    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-    .map((c) => ({
-      id: c.id,
-      name: c.name,
-      phone: c.phone,
-      customMessage: c.customMessage || '',
-      hasCustomMessage: !!(c.customMessage && c.customMessage.trim()),
-      stage: c.stage || 'to_send',
-      sentiment: c.sentiment || null,
-      complaint: c.complaint || '',
-      createdAt: c.createdAt,
-      lastRequestAt: c.lastRequestAt,
-      lastRequestStatus: c.lastRequestStatus,
-    }));
-  res.json({ customers: list });
+router.get('/customers', auth, async (req, res) => {
+  const list = await getCustomersForBusiness(req.business.id);
+  list.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  res.json({ customers: list.map(c => ({ ...c, hasCustomMessage: !!(c.customMessage && c.customMessage.trim()) })) });
 });
 
-router.get('/customers/:id', auth, (req, res) => {
+router.get('/customers/:id', auth, async (req, res) => {
   const db = getDb();
-  const customer = db.data.customers.find((c) => c.id === req.params.id && c.businessId === req.business.id);
-  if (!customer) return res.status(404).json({ error: 'Customer not found' });
-  const requests = db.data.requests
-    .filter((r) => r.customerId === customer.id)
-    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-  const request = requests[0];
-  const conversation = renderConversation(req.business, customer, request);
+  const { data } = await db.from('customers').select('*').eq('id', req.params.id).eq('business_id', req.business.id).single();
+  if (!data) return res.status(404).json({ error: 'Customer not found' });
+  const customer = mapCustomer(data);
+  const { data: reqsData } = await db.from('requests').select('*').eq('customer_id', customer.id).order('created_at', { ascending: false });
+  const requests = (reqsData || []).map(mapRequest);
+  const { data: fbData } = await db.from('feedback').select('*').eq('customer_id', customer.id).single();
+  const feedbackForCustomer = fbData ? mapFeedback(fbData) : null;
+  const conversation = renderConversation(req.business, customer, requests[0], feedbackForCustomer);
   res.json({
-    customer: {
-      id: customer.id,
-      name: customer.name,
-      phone: customer.phone,
-      customMessage: customer.customMessage || '',
-      hasCustomMessage: !!(customer.customMessage && customer.customMessage.trim()),
-      stage: customer.stage || 'to_send',
-      sentiment: customer.sentiment || null,
-      complaint: customer.complaint || '',
-      createdAt: customer.createdAt,
-    },
-    requests,
-    conversation,
-    config: {
-      googleReviewLink: req.business.googleReviewLink,
-      feedbackLink: req.business.feedbackLink,
-      messageTemplate: req.business.messageTemplate,
-    },
+    customer: { ...customer, hasCustomMessage: !!(customer.customMessage && customer.customMessage.trim()) },
+    requests, conversation,
+    config: { googleReviewLink: req.business.googleReviewLink, feedbackLink: req.business.feedbackLink, messageTemplate: req.business.messageTemplate },
   });
 });
 
-function createCustomerAndSchedule(db, business, name, phone) {
-  const customer = {
-    id: newId('cust'),
-    businessId: business.id,
-    name,
-    phone,
-    customMessage: '',
-    stage: 'to_send',
-    sentiment: null,
-    complaint: '',
-    createdAt: new Date().toISOString(),
-    lastRequestAt: null,
-    lastRequestStatus: null,
-  };
-  db.data.customers.push(customer);
-
-  const request = {
-    id: newId('req'),
-    businessId: business.id,
-    customerId: customer.id,
-    customerName: customer.name,
-    phone: customer.phone,
-    message: '',
-    status: 'Scheduled',
-    createdAt: new Date().toISOString(),
-    sentAt: null,
-    openedAt: null,
-    reviewedAt: null,
-  };
-  db.data.requests.push(request);
-  enqueueCustomerSend(db, business, customer);
-  return { customer, request };
+async function createCustomerAndSchedule(business, name, phone) {
+  const db = getDb();
+  const customerId = newId('cust');
+  const requestId = newId('req');
+  const customerRow = { id: customerId, business_id: business.id, name, phone, custom_message: '', stage: 'to_send', sentiment: null, complaint: '', created_at: new Date().toISOString(), last_request_at: null, last_request_status: null };
+  const requestRow = { id: requestId, business_id: business.id, customer_id: customerId, customer_name: name, phone, message: '', status: 'Scheduled', created_at: new Date().toISOString(), sent_at: null, opened_at: null, reviewed_at: null };
+  await db.from('customers').insert(customerRow);
+  await db.from('requests').insert(requestRow);
+  const customer = mapCustomer(customerRow);
+  await enqueueCustomerSend(business, customer);
+  return { customer, request: mapRequest(requestRow) };
 }
 
 router.post('/customers', auth, async (req, res) => {
   const { name, phone } = req.body || {};
   if (!name || !phone) return res.status(400).json({ error: 'Name and phone are required' });
-  const db = getDb();
-  const { customer } = createCustomerAndSchedule(db, req.business, name.trim(), phone.trim());
-  await db.write();
+  const { customer } = await createCustomerAndSchedule(req.business, name.trim(), phone.trim());
   res.json({ customer });
 });
 
 router.post('/customers/import', auth, async (req, res) => {
   const rows = Array.isArray(req.body?.customers) ? req.body.customers : [];
-  const db = getDb();
   const added = [];
   const skipped = [];
   for (const row of rows) {
     const name = String(row.name || '').trim();
     const phone = String(row.phone || '').trim();
     if (!name || !phone) { skipped.push(row); continue; }
-    const { customer } = createCustomerAndSchedule(db, req.business, name, phone);
+    const { customer } = await createCustomerAndSchedule(req.business, name, phone);
     added.push(customer);
   }
-  await db.write();
   res.json({ added: added.length, skipped: skipped.length, customers: added });
 });
 
-// Send (or re-send) the initial WhatsApp outreach for a customer.
 router.post('/customers/:id/send', auth, async (req, res) => {
   const db = getDb();
-  const customer = db.data.customers.find((c) => c.id === req.params.id && c.businessId === req.business.id);
-  if (!customer) return res.status(404).json({ error: 'Customer not found' });
-  let request = db.data.requests.find((r) => r.customerId === customer.id && r.status === 'Scheduled');
-  if (!request) {
-    request = {
-      id: newId('req'),
-      businessId: req.business.id,
-      customerId: customer.id,
-      customerName: customer.name,
-      phone: customer.phone,
-      message: '',
-      status: 'Scheduled',
-      createdAt: new Date().toISOString(),
-      sentAt: null,
-      openedAt: null,
-      reviewedAt: null,
-    };
-    db.data.requests.push(request);
+  const { data: custData } = await db.from('customers').select('*').eq('id', req.params.id).eq('business_id', req.business.id).single();
+  if (!custData) return res.status(404).json({ error: 'Customer not found' });
+  const customer = mapCustomer(custData);
+  let { data: reqData } = await db.from('requests').select('*').eq('customer_id', customer.id).eq('status', 'Scheduled').single();
+  if (!reqData) {
+    const newRow = { id: newId('req'), business_id: req.business.id, customer_id: customer.id, customer_name: customer.name, phone: customer.phone, message: '', status: 'Scheduled', created_at: new Date().toISOString(), sent_at: null, opened_at: null, reviewed_at: null };
+    await db.from('requests').insert(newRow);
+    reqData = newRow;
   }
-  await db.write();
-  await performSendNow(db, req.business, customer, request);
+  const request = mapRequest(reqData);
+  await performSendNow(req.business, customer, request);
   res.json({ request, customer: { id: customer.id, stage: customer.stage } });
 });
 
-// Simulate the customer opening the message.
 router.post('/customers/:id/open', auth, async (req, res) => {
   const db = getDb();
-  const customer = db.data.customers.find((c) => c.id === req.params.id && c.businessId === req.business.id);
-  if (!customer) return res.status(404).json({ error: 'Customer not found' });
+  const { data: custData } = await db.from('customers').select('*').eq('id', req.params.id).eq('business_id', req.business.id).single();
+  if (!custData) return res.status(404).json({ error: 'Customer not found' });
+  const customer = mapCustomer(custData);
   if (customer.stage !== 'sent' && customer.stage !== 'to_send') {
     return res.status(400).json({ error: `Cannot open from stage "${customer.stage}"` });
   }
-  const request = latestRequest(db, customer.id) || db.data.requests.find((r) => r.customerId === customer.id);
-  if (request) {
-    if (!request.openedAt) request.openedAt = new Date().toISOString();
-    if (request.status === 'Sent') request.status = 'Opened';
+  const { data: reqData } = await db.from('requests').select('*').eq('customer_id', customer.id).order('created_at', { ascending: false }).limit(1).single();
+  if (reqData) {
+    const updates = {};
+    if (!reqData.opened_at) updates.opened_at = new Date().toISOString();
+    if (reqData.status === 'Sent') updates.status = 'Opened';
+    await db.from('requests').update(updates).eq('id', reqData.id);
   }
-  customer.stage = 'opened';
-  customer.lastRequestStatus = 'Opened';
-  await db.write();
-  res.json({ customer: { id: customer.id, stage: customer.stage } });
+  await db.from('customers').update({ stage: 'opened', last_request_status: 'Opened' }).eq('id', customer.id);
+  res.json({ customer: { id: customer.id, stage: 'opened' } });
 });
 
-// Simulate the customer tapping a quick-reply (positive / negative).
 router.post('/customers/:id/reply', auth, async (req, res) => {
   const db = getDb();
-  const customer = db.data.customers.find((c) => c.id === req.params.id && c.businessId === req.business.id);
-  if (!customer) return res.status(404).json({ error: 'Customer not found' });
-  if (customer.stage !== 'opened') {
-    return res.status(400).json({ error: `Cannot reply from stage "${customer.stage}"` });
-  }
+  const { data: custData } = await db.from('customers').select('*').eq('id', req.params.id).eq('business_id', req.business.id).single();
+  if (!custData) return res.status(404).json({ error: 'Customer not found' });
+  const customer = mapCustomer(custData);
+  if (customer.stage !== 'opened') return res.status(400).json({ error: `Cannot reply from stage "${customer.stage}"` });
   const { reaction } = req.body || {};
-  if (reaction !== 'positive' && reaction !== 'negative') {
-    return res.status(400).json({ error: 'reaction must be "positive" or "negative"' });
-  }
-  const request = latestRequest(db, customer.id);
-  if (request) request.reaction = reaction;
-  customer.sentiment = reaction;
-  customer.reactedAt = new Date().toISOString();
-  customer.stage = reaction; // 'positive' or 'negative'
+  if (reaction !== 'positive' && reaction !== 'negative') return res.status(400).json({ error: 'reaction must be "positive" or "negative"' });
+  const { data: reqData } = await db.from('requests').select('*').eq('customer_id', customer.id).order('created_at', { ascending: false }).limit(1).single();
+  if (reqData) await db.from('requests').update({ reaction }).eq('id', reqData.id);
+  const now = new Date().toISOString();
+  await db.from('customers').update({ sentiment: reaction, stage: reaction }).eq('id', customer.id);
 
   if (reaction === 'negative') {
-    customer.stage = 'negative';
-    const existing = db.data.feedback.find((f) => f.customerId === customer.id);
+    const { data: existing } = await db.from('feedback').select('*').eq('customer_id', customer.id).single();
     if (!existing) {
-      db.data.feedback.push({
-        id: `fb_${customer.id}`,
-        businessId: req.business.id,
-        customerId: customer.id,
-        customerName: customer.name,
-        phone: customer.phone,
-        complaint: customer.complaint || '',
-        createdAt: customer.reactedAt,
-      });
+      await db.from('feedback').insert({ id: `fb_${customer.id}`, business_id: req.business.id, customer_id: customer.id, customer_name: customer.name, phone: customer.phone, complaint: customer.complaint || '', created_at: now });
     } else {
-      existing.createdAt = customer.reactedAt;
+      await db.from('feedback').update({ created_at: now }).eq('id', existing.id);
     }
-    await recordActivity(db, req.business.id, {
-      type: 'negative_reply',
-      customerName: customer.name,
-      phone: customer.phone,
-      message: negativeFollowUp(req.business.feedbackLink),
-      status: 'Negative',
-    });
+    await recordActivity(req.business.id, { type: 'negative_reply', customerName: customer.name, phone: customer.phone, message: negativeFollowUp(req.business.feedbackLink), status: 'Negative' });
   } else {
-    customer.stage = 'positive';
-    await recordActivity(db, req.business.id, {
-      type: 'positive_reply',
-      customerName: customer.name,
-      phone: customer.phone,
-      message: positiveFollowUp(req.business.googleReviewLink),
-      status: 'Positive',
-    });
+    await recordActivity(req.business.id, { type: 'positive_reply', customerName: customer.name, phone: customer.phone, message: positiveFollowUp(req.business.googleReviewLink), status: 'Positive' });
   }
-  await db.write();
-  res.json({ customer: { id: customer.id, stage: customer.stage, sentiment: customer.sentiment } });
+  res.json({ customer: { id: customer.id, stage: reaction, sentiment: reaction } });
 });
 
-// Positive path: customer leaves a Google review.
 router.post('/customers/:id/review', auth, async (req, res) => {
   const db = getDb();
-  const customer = db.data.customers.find((c) => c.id === req.params.id && c.businessId === req.business.id);
-  if (!customer) return res.status(404).json({ error: 'Customer not found' });
-  if (customer.stage !== 'positive') {
-    return res.status(400).json({ error: `Cannot review from stage "${customer.stage}"` });
-  }
-  const request = latestRequest(db, customer.id);
+  const { data: custData } = await db.from('customers').select('*').eq('id', req.params.id).eq('business_id', req.business.id).single();
+  if (!custData) return res.status(404).json({ error: 'Customer not found' });
+  const customer = mapCustomer(custData);
+  if (customer.stage !== 'positive') return res.status(400).json({ error: `Cannot review from stage "${customer.stage}"` });
+  const { data: reqData } = await db.from('requests').select('*').eq('customer_id', customer.id).order('created_at', { ascending: false }).limit(1).single();
   const now = new Date().toISOString();
-  if (request) {
-    request.status = 'Reviewed';
-    if (!request.reviewedAt) request.reviewedAt = now;
-  }
-  customer.stage = 'reviewed';
-  customer.reviewedGoogleAt = now;
-  customer.lastRequestStatus = 'Reviewed';
-
-  const already = db.data.reviews.find((r) => r.customerId === customer.id);
+  if (reqData) await db.from('requests').update({ status: 'Reviewed', reviewed_at: reqData.reviewed_at || now }).eq('id', reqData.id);
+  await db.from('customers').update({ stage: 'reviewed', last_request_status: 'Reviewed' }).eq('id', customer.id);
+  const { data: already } = await db.from('reviews').select('*').eq('customer_id', customer.id).limit(1).single();
   if (!already) {
-    db.data.reviews.push({
-      id: `rev_${customer.id}`,
-      businessId: req.business.id,
-      customerId: customer.id,
-      customerName: customer.name,
-      rating: 5,
-      requestId: request ? request.id : null,
-      sentAt: request ? request.sentAt : null,
-      createdAt: now,
-    });
-    req.business.reviewsReceived = db.data.reviews.filter((r) => r.businessId === req.business.id).length;
+    await db.from('reviews').insert({ id: `rev_${customer.id}`, business_id: req.business.id, customer_id: customer.id, customer_name: customer.name, rating: 5, request_id: reqData ? reqData.id : null, sent_at: reqData ? reqData.sent_at : null, created_at: now });
+    const { count } = await db.from('reviews').select('*', { count: 'exact', head: true }).eq('business_id', req.business.id);
+    await db.from('businesses').update({ reviews_received: count || 0 }).eq('id', req.business.id);
   }
-  await db.write();
-  res.json({ customer: { id: customer.id, stage: customer.stage }, reviewsReceived: req.business.reviewsReceived });
+  const { count } = await db.from('reviews').select('*', { count: 'exact', head: true }).eq('business_id', req.business.id);
+  res.json({ customer: { id: customer.id, stage: 'reviewed' }, reviewsReceived: count || 0 });
 });
 
-// Negative path: customer submits private feedback (kept off Google).
 router.post('/customers/:id/feedback', auth, async (req, res) => {
   const db = getDb();
-  const customer = db.data.customers.find((c) => c.id === req.params.id && c.businessId === req.business.id);
-  if (!customer) return res.status(404).json({ error: 'Customer not found' });
-  if (customer.stage !== 'negative') {
-    return res.status(400).json({ error: `Cannot submit feedback from stage "${customer.stage}"` });
-  }
+  const { data: custData } = await db.from('customers').select('*').eq('id', req.params.id).eq('business_id', req.business.id).single();
+  if (!custData) return res.status(404).json({ error: 'Customer not found' });
+  const customer = mapCustomer(custData);
+  if (customer.stage !== 'negative') return res.status(400).json({ error: `Cannot submit feedback from stage "${customer.stage}"` });
   const { complaint, name, phone } = req.body || {};
   const text = (complaint && String(complaint).trim()) || customer.complaint || '';
-  let fb = db.data.feedback.find((f) => f.customerId === customer.id);
   const now = new Date().toISOString();
-  if (!fb) {
-    fb = {
-      id: `fb_${customer.id}`,
-      businessId: req.business.id,
-      customerId: customer.id,
-      customerName: customer.name,
-      phone: customer.phone,
-      complaint: '',
-      createdAt: now,
-    };
-    db.data.feedback.push(fb);
+  const { data: existing } = await db.from('feedback').select('*').eq('customer_id', customer.id).single();
+  if (!existing) {
+    await db.from('feedback').insert({ id: `fb_${customer.id}`, business_id: req.business.id, customer_id: customer.id, customer_name: customer.name, phone: customer.phone, complaint: text, created_at: now, submitted_at: now });
+  } else {
+    await db.from('feedback').update({ complaint: text, customer_name: name ? String(name).trim() : customer.name, phone: phone ? String(phone).trim() : customer.phone, submitted_at: now }).eq('id', existing.id);
   }
-  fb.complaint = text;
-  fb.customerName = name ? String(name).trim() : customer.name;
-  fb.phone = phone ? String(phone).trim() : customer.phone;
-  fb.submittedAt = now;
-  customer.complaint = text;
-  customer.stage = 'negative';
-  await db.write();
-  res.json({ feedback: fb, customer: { id: customer.id, stage: customer.stage } });
+  await db.from('customers').update({ complaint: text }).eq('id', customer.id);
+  res.json({ feedback: existing || { id: `fb_${customer.id}`, complaint: text }, customer: { id: customer.id, stage: 'negative' } });
 });
 
-// Reset a customer back to the start of the pipeline (To Send).
 router.post('/customers/:id/reset', auth, async (req, res) => {
   const db = getDb();
-  const customer = db.data.customers.find((c) => c.id === req.params.id && c.businessId === req.business.id);
-  if (!customer) return res.status(404).json({ error: 'Customer not found' });
-  customer.stage = 'to_send';
-  customer.sentiment = null;
-  customer.complaint = '';
-  customer.reactedAt = null;
-  customer.reviewedGoogleAt = null;
-  db.data.feedback = db.data.feedback.filter((f) => f.customerId !== customer.id);
-  const hadReview = db.data.reviews.some((r) => r.customerId === customer.id);
-  db.data.reviews = db.data.reviews.filter((r) => r.customerId !== customer.id);
-  if (hadReview) req.business.reviewsReceived = db.data.reviews.filter((r) => r.businessId === req.business.id).length;
-  const reqs = db.data.requests.filter((r) => r.customerId === customer.id);
-  for (const r of reqs) {
-    r.status = 'Scheduled';
-    r.reaction = null;
-    r.openedAt = null;
-    r.reviewedAt = null;
-  }
-  await db.write();
-  res.json({ customer: { id: customer.id, stage: customer.stage }, reviewsReceived: req.business.reviewsReceived });
+  const { data: custData } = await db.from('customers').select('*').eq('id', req.params.id).eq('business_id', req.business.id).single();
+  if (!custData) return res.status(404).json({ error: 'Customer not found' });
+  const customer = mapCustomer(custData);
+  await db.from('customers').update({ stage: 'to_send', sentiment: null, complaint: '' }).eq('id', customer.id);
+  await db.from('feedback').delete().eq('customer_id', customer.id);
+  await db.from('reviews').delete().eq('customer_id', customer.id);
+  await db.from('requests').update({ status: 'Scheduled', reaction: null, opened_at: null, reviewed_at: null }).eq('customer_id', customer.id);
+  const { count } = await db.from('reviews').select('*', { count: 'exact', head: true }).eq('business_id', req.business.id);
+  await db.from('businesses').update({ reviews_received: count || 0 }).eq('id', req.business.id);
+  res.json({ customer: { id: customer.id, stage: 'to_send' }, reviewsReceived: count || 0 });
 });
 
-// Update a customer (name, phone, or custom message override).
 router.put('/customers/:id', auth, async (req, res) => {
   const db = getDb();
-  const customer = db.data.customers.find((c) => c.id === req.params.id && c.businessId === req.business.id);
-  if (!customer) return res.status(404).json({ error: 'Customer not found' });
+  const { data: custData } = await db.from('customers').select('*').eq('id', req.params.id).eq('business_id', req.business.id).single();
+  if (!custData) return res.status(404).json({ error: 'Customer not found' });
+  const customer = mapCustomer(custData);
   const { name, phone, customMessage } = req.body || {};
-  if (typeof name === 'string' && name.trim()) customer.name = name.trim();
-  if (typeof phone === 'string' && phone.trim()) customer.phone = phone.trim();
-  if (typeof customMessage === 'string') customer.customMessage = customMessage;
-  await db.write();
-  res.json({
-    customer: {
-      id: customer.id,
-      name: customer.name,
-      phone: customer.phone,
-      customMessage: customer.customMessage,
-      hasCustomMessage: !!(customer.customMessage && customer.customMessage.trim()),
-      stage: customer.stage,
-      sentiment: customer.sentiment,
-    },
-  });
+  const updates = {};
+  if (typeof name === 'string' && name.trim()) updates.name = name.trim();
+  if (typeof phone === 'string' && phone.trim()) updates.phone = phone.trim();
+  if (typeof customMessage === 'string') updates.custom_message = customMessage;
+  if (Object.keys(updates).length > 0) await db.from('customers').update(updates).eq('id', customer.id);
+  const updated = { ...customer, ...updates };
+  res.json({ customer: { id: updated.id, name: updated.name, phone: updated.phone, customMessage: updated.customMessage || updated.custom_message || '', hasCustomMessage: !!(updated.customMessage || updated.custom_message), stage: updated.stage, sentiment: updated.sentiment } });
 });
 
-// Render a message for a customer using their override (if any) — used for live preview.
 router.post('/render', auth, async (req, res) => {
   const db = getDb();
   const { customerId, template, customerName } = req.body || {};
   let customer = null;
   if (customerId) {
-    customer = db.data.customers.find((c) => c.id === customerId && c.businessId === req.business.id);
+    const { data } = await db.from('customers').select('*').eq('id', customerId).eq('business_id', req.business.id).single();
+    if (data) customer = mapCustomer(data);
   }
   const effectiveTemplate = template && template.trim()
     ? template
-    : (customer && customer.customMessage && customer.customMessage.trim())
-      ? customer.customMessage
-      : req.business.messageTemplate;
-  const message = renderTemplate(effectiveTemplate, {
-    customerName: customerName || customer?.name || req.body?.fallbackName || 'Rahul Sharma',
-    businessName: req.business.name,
-    reviewLink: req.business.googleReviewLink,
-  });
+    : (customer && customer.customMessage && customer.customMessage.trim()) ? customer.customMessage : req.business.messageTemplate;
+  const message = renderTemplate(effectiveTemplate, { customerName: customerName || customer?.name || req.body?.fallbackName || 'Rahul Sharma', businessName: req.business.name, reviewLink: req.business.googleReviewLink });
   res.json({ message, usingOverride: !!(customer && customer.customMessage && customer.customMessage.trim() && !template) });
 });
 
-// --- Private feedback (owner-only, never shown on Google) ---
-router.get('/feedback', auth, (req, res) => {
-  const db = getDb();
-  const list = db.data.feedback
-    .filter((f) => f.businessId === req.business.id)
-    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+router.get('/feedback', auth, async (req, res) => {
+  const list = await getFeedbackForBusiness(req.business.id);
+  list.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   res.json({ feedback: list, total: list.length });
 });
 
-// --- Reviews (real records, computed analytics) ---
-router.get('/reviews', auth, (req, res) => {
-  const db = getDb();
-  const list = db.data.reviews
-    .filter((r) => r.businessId === req.business.id)
-    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+router.get('/reviews', auth, async (req, res) => {
+  const list = await getReviewsForBusiness(req.business.id);
+  list.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   res.json({ reviews: list, total: list.length });
 });
 
-// Manually log a review (used during the demo before Google integration).
 router.post('/reviews', auth, async (req, res) => {
   const db = getDb();
   const { customerId, customerName, rating } = req.body || {};
-  const review = {
-    id: newId('rev'),
-    businessId: req.business.id,
-    customerId: customerId || null,
-    customerName: customerName || null,
-    rating: Number.isFinite(Number(rating)) ? Number(rating) : 5,
-    requestId: null,
-    sentAt: null,
-    createdAt: new Date().toISOString(),
-  };
-  db.data.reviews.push(review);
-  req.business.reviewsReceived = db.data.reviews.filter((r) => r.businessId === req.business.id).length;
-  await db.write();
-  res.json({ review, total: req.business.reviewsReceived });
+  const review = { id: newId('rev'), business_id: req.business.id, customer_id: customerId || null, customer_name: customerName || null, rating: Number.isFinite(Number(rating)) ? Number(rating) : 5, request_id: null, sent_at: null, created_at: new Date().toISOString() };
+  await db.from('reviews').insert(review);
+  const { count } = await db.from('reviews').select('*', { count: 'exact', head: true }).eq('business_id', req.business.id);
+  await db.from('businesses').update({ reviews_received: count || 0 }).eq('id', req.business.id);
+  res.json({ review: mapReview(review), total: count || 0 });
 });
 
-// Remove the most recent review (undo a manual log).
 router.delete('/reviews/last', auth, async (req, res) => {
   const db = getDb();
-  const mine = db.data.reviews
-    .filter((r) => r.businessId === req.business.id)
-    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-  if (mine.length === 0) return res.status(404).json({ error: 'No reviews to remove' });
-  const last = mine[0];
-  db.data.reviews = db.data.reviews.filter((r) => r.id !== last.id);
-  req.business.reviewsReceived = db.data.reviews.filter((r) => r.businessId === req.business.id).length;
-  await db.write();
+  const { data: mine } = await db.from('reviews').select('*').eq('business_id', req.business.id).order('created_at', { ascending: false }).limit(1);
+  if (!mine || mine.length === 0) return res.status(404).json({ error: 'No reviews to remove' });
+  await db.from('reviews').delete().eq('id', mine[0].id);
+  const { count } = await db.from('reviews').select('*', { count: 'exact', head: true }).eq('business_id', req.business.id);
+  await db.from('businesses').update({ reviews_received: count || 0 }).eq('id', req.business.id);
   res.json({ ok: true });
 });
 
-// --- Positive / negative review list for the dashboard ---
-// Positive = rating >= 4 (from db.data.reviews). Negative = rating < 4 (also stored in
-// db.data.reviews when synced from Google) OR an internal 👎-flow private feedback entry
-// that hasn't been synced from Google yet.
-router.get('/reviews/list', auth, (req, res) => {
-  const db = getDb();
+router.get('/reviews/list', auth, async (req, res) => {
   const biz = req.business;
-  const reviews = db.data.reviews.filter((r) => r.businessId === biz.id);
-  const positive = reviews
-    .filter((r) => (r.rating || 5) >= 4)
-    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-    .map((r) => ({ id: r.id, customerName: r.customerName || 'Anonymous', rating: r.rating, text: r.text || '', source: r.source || 'internal', createdAt: r.createdAt }));
-
-  const negativeFromReviews = reviews
-    .filter((r) => (r.rating || 5) < 4)
-    .map((r) => ({ id: r.id, customerName: r.customerName || 'Anonymous', rating: r.rating, text: r.text || '', source: r.source || 'google', createdAt: r.createdAt }));
-  const negativeFromFeedback = db.data.feedback
-    .filter((f) => f.businessId === biz.id)
-    .map((f) => ({ id: f.id, customerName: f.customerName || 'Anonymous', rating: null, text: f.complaint || '', source: 'internal', createdAt: f.createdAt }));
-  const negative = [...negativeFromReviews, ...negativeFromFeedback]
-    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-
+  const reviews = await getReviewsForBusiness(biz.id);
+  const positive = reviews.filter((r) => (r.rating || 5) >= 4).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).map((r) => ({ id: r.id, customerName: r.customerName || 'Anonymous', rating: r.rating, text: r.text || '', source: r.source || 'internal', createdAt: r.createdAt }));
+  const negativeFromReviews = reviews.filter((r) => (r.rating || 5) < 4).map((r) => ({ id: r.id, customerName: r.customerName || 'Anonymous', rating: r.rating, text: r.text || '', source: r.source || 'google', createdAt: r.createdAt }));
+  const feedbackList = await getFeedbackForBusiness(biz.id);
+  const negativeFromFeedback = feedbackList.map((f) => ({ id: f.id, customerName: f.customerName || 'Anonymous', rating: null, text: f.complaint || '', source: 'internal', createdAt: f.createdAt }));
+  const negative = [...negativeFromReviews, ...negativeFromFeedback].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   res.json({ positive, negative });
 });
 
-// Pull real reviews from Google (Places API "Place Details" reviews field) and file
-// each one as positive (rating >= 4) or negative (rating < 4), per the classification
-// the business owner asked for. Requires GOOGLE_PLACES_API_KEY on the server and a
-// placeId configured in Settings — if either is missing, respond with connected:false
-// instead of erroring, so the dashboard can show a friendly "not connected yet" state.
 router.post('/reviews/google/sync', auth, async (req, res) => {
   const db = getDb();
   const biz = req.business;
   const apiKey = process.env.GOOGLE_PLACES_API_KEY;
   if (!apiKey || !biz.placeId) {
-    return res.json({
-      connected: false,
-      message: !apiKey
-        ? 'Google Places API key is not configured on the server yet.'
-        : 'No Google Place ID is set for this business yet — add it in Settings.',
-    });
+    return res.json({ connected: false, message: !apiKey ? 'Google Places API key is not configured on the server yet.' : 'No Google Place ID is set for this business yet — add it in Settings.' });
   }
   try {
     const url = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${encodeURIComponent(biz.placeId)}&fields=review,rating,user_ratings_total&key=${apiKey}`;
     const resp = await fetch(url);
     const data = await resp.json();
-    if (data.status !== 'OK') {
-      return res.json({ connected: false, message: `Google API error: ${data.status}` });
-    }
+    if (data.status !== 'OK') return res.json({ connected: false, message: `Google API error: ${data.status}` });
     const googleReviews = data.result?.reviews || [];
     let added = 0;
     for (const gr of googleReviews) {
       const googleReviewId = `g_${gr.author_name}_${gr.time}`;
-      const alreadyReview = db.data.reviews.find((r) => r.googleReviewId === googleReviewId);
-      const alreadyFeedback = db.data.feedback.find((f) => f.googleReviewId === googleReviewId);
-      if (alreadyReview || alreadyFeedback) continue;
+      const { data: existingReview } = await db.from('reviews').select('*').eq('google_review_id', googleReviewId).limit(1).single();
+      const { data: existingFeedback } = await db.from('feedback').select('*').eq('google_review_id', googleReviewId).limit(1).single();
+      if (existingReview || existingFeedback) continue;
       const createdAt = new Date(gr.time * 1000).toISOString();
-      if (gr.rating >= 4) {
-        db.data.reviews.push({
-          id: newId('rev'),
-          businessId: biz.id,
-          customerId: null,
-          customerName: gr.author_name,
-          rating: gr.rating,
-          text: gr.text || '',
-          source: 'google',
-          googleReviewId,
-          requestId: null,
-          sentAt: null,
-          createdAt,
-        });
-      } else {
-        db.data.reviews.push({
-          id: newId('rev'),
-          businessId: biz.id,
-          customerId: null,
-          customerName: gr.author_name,
-          rating: gr.rating,
-          text: gr.text || '',
-          source: 'google',
-          googleReviewId,
-          requestId: null,
-          sentAt: null,
-          createdAt,
-        });
-        db.data.feedback.push({
-          id: newId('fb'),
-          businessId: biz.id,
-          customerId: null,
-          customerName: gr.author_name,
-          phone: '',
-          complaint: gr.text || `${gr.rating}★ Google review`,
-          googleReviewId,
-          createdAt,
-        });
+      await db.from('reviews').insert({ id: newId('rev'), business_id: biz.id, customer_id: null, customer_name: gr.author_name, rating: gr.rating, text: gr.text || '', source: 'google', google_review_id: googleReviewId, request_id: null, sent_at: null, created_at: createdAt });
+      if (gr.rating < 4) {
+        await db.from('feedback').insert({ id: newId('fb'), business_id: biz.id, customer_id: null, customer_name: gr.author_name, phone: '', complaint: gr.text || `${gr.rating}★ Google review`, google_review_id: googleReviewId, created_at: createdAt });
       }
       added++;
     }
-    biz.reviewsReceived = db.data.reviews.filter((r) => r.businessId === biz.id && (r.rating || 5) >= 4).length;
-    await db.write();
+    const { count } = await db.from('reviews').select('*', { count: 'exact', head: true }).eq('business_id', biz.id).gte('rating', 4);
+    await db.from('businesses').update({ reviews_received: count || 0 }).eq('id', biz.id);
     res.json({ connected: true, added, total: googleReviews.length });
   } catch (err) {
     res.json({ connected: false, message: `Could not reach Google: ${err.message}` });
   }
 });
 
-// --- Failed sends (owner can retry from the dashboard) ---
-router.get('/pending-sends/failed', auth, (req, res) => {
+router.get('/pending-sends/failed', auth, async (req, res) => {
   const db = getDb();
-  const list = getFailedSends(db, req.business.id).map((s) => ({
-    id: s.id,
-    customerId: s.customerId,
-    phone: s.phone,
-    error: s.error,
-    retryCount: s.retryCount,
-    customerName: db.data.customers.find((c) => c.id === s.customerId)?.name || s.phone,
-  }));
-  res.json({ failed: list });
+  const list = await getFailedSends(req.business.id);
+  const customersList = await getCustomersForBusiness(req.business.id);
+  const customerMap = new Map(customersList.map(c => [c.id, c]));
+  res.json({ failed: list.map((s) => ({ id: s.id, customerId: s.customerId, phone: s.phone, error: s.error, retryCount: s.retryCount, customerName: customerMap.get(s.customerId)?.name || s.phone })) });
 });
 
 router.post('/pending-sends/:id/retry', auth, async (req, res) => {
-  const db = getDb();
-  const row = await retrySend(db, req.params.id);
+  const row = await retrySend(req.params.id);
   if (!row) return res.status(404).json({ error: 'Pending send not found' });
   res.json({ ok: true, status: row.status });
 });
-router.get('/analytics', auth, (req, res) => {
-  const db = getDb();
+
+router.get('/analytics', auth, async (req, res) => {
   const biz = req.business;
-  const reqs = db.data.requests.filter((r) => r.businessId === biz.id);
-  const reviews = db.data.reviews.filter((r) => r.businessId === biz.id);
-  const customers = db.data.customers.filter((c) => c.businessId === biz.id);
-  const feedback = db.data.feedback.filter((f) => f.businessId === biz.id);
+  const reqs = await getRequestsForBusiness(biz.id);
+  const reviews = await getReviewsForBusiness(biz.id);
+  const customers = await getCustomersForBusiness(biz.id);
+  const feedback = await getFeedbackForBusiness(biz.id);
 
   const now = new Date();
   const thisMonth = now.getMonth();
@@ -805,332 +509,225 @@ router.get('/analytics', auth, (req, res) => {
   const lastMonth = thisMonth === 0 ? 11 : thisMonth - 1;
   const lastYear = thisMonth === 0 ? thisYear - 1 : thisYear;
 
-  const reviewsThisMonth = reviews.filter((r) => {
-    const d = new Date(r.createdAt);
-    return d.getFullYear() === thisYear && d.getMonth() === thisMonth;
-  }).length;
-  const reviewsLastMonth = reviews.filter((r) => {
-    const d = new Date(r.createdAt);
-    return d.getFullYear() === lastYear && d.getMonth() === lastMonth;
-  }).length;
+  const reviewsThisMonth = reviews.filter((r) => { const d = new Date(r.createdAt); return d.getFullYear() === thisYear && d.getMonth() === thisMonth; }).length;
+  const reviewsLastMonth = reviews.filter((r) => { const d = new Date(r.createdAt); return d.getFullYear() === lastYear && d.getMonth() === lastMonth; }).length;
   const momPct = reviewsLastMonth ? Math.round(((reviewsThisMonth - reviewsLastMonth) / reviewsLastMonth) * 1000) / 10 : (reviewsThisMonth ? 100 : 0);
 
-  // Reviews per week, last 12 weeks (current week includes today up to now).
-  const today = new Date(now);
-  today.setHours(0, 0, 0, 0);
+  const today = new Date(now); today.setHours(0, 0, 0, 0);
   const weeks = [];
   for (let i = 11; i >= 0; i--) {
-    const weekEnd = new Date(today);
-    weekEnd.setDate(weekEnd.getDate() - i * 7);
-    const weekStart = new Date(weekEnd);
-    weekStart.setDate(weekStart.getDate() - 7);
+    const weekEnd = new Date(today); weekEnd.setDate(weekEnd.getDate() - i * 7);
+    const weekStart = new Date(weekEnd); weekStart.setDate(weekStart.getDate() - 7);
     const upper = i === 0 ? now : weekEnd;
-    const count = reviews.filter((r) => {
-      const d = new Date(r.createdAt);
-      return d >= weekStart && d < upper;
-    }).length;
+    const count = reviews.filter((r) => { const d = new Date(r.createdAt); return d >= weekStart && d < upper; }).length;
     weeks.push({ label: `W${12 - i}`, count });
   }
 
-  // Reviews per day of week (0=Sun .. 6=Sat).
   const dow = [0, 0, 0, 0, 0, 0, 0];
   for (const r of reviews) dow[new Date(r.createdAt).getDay()]++;
 
-  // Average time-to-review (only reviews linked to a request).
   const linked = reviews.filter((r) => r.sentAt && r.createdAt);
   let avgTimeToReview = null;
   if (linked.length) {
     const totalMs = linked.reduce((sum, r) => sum + (new Date(r.createdAt) - new Date(r.sentAt)), 0);
-    avgTimeToReview = Math.round(totalMs / linked.length / 3600000); // hours
+    avgTimeToReview = Math.round(totalMs / linked.length / 3600000);
   }
 
-  // Conversion funnel.
   const sent = reqs.filter((r) => r.status !== 'Scheduled').length;
   const opened = reqs.filter((r) => r.status === 'Opened' || r.status === 'Reviewed').length;
   const reviewed = reviews.length;
-  const funnel = {
-    sent,
-    opened,
-    reviewed,
-    sentToOpenedPct: sent ? Math.round((opened / sent) * 1000) / 10 : 0,
-    openedToReviewedPct: opened ? Math.round((reviewed / opened) * 1000) / 10 : 0,
-    sentToReviewedPct: sent ? Math.round((reviewed / sent) * 1000) / 10 : 0,
-  };
+  const funnel = { sent, opened, reviewed, sentToOpenedPct: sent ? Math.round((opened / sent) * 1000) / 10 : 0, openedToReviewedPct: opened ? Math.round((reviewed / opened) * 1000) / 10 : 0, sentToReviewedPct: sent ? Math.round((reviewed / sent) * 1000) / 10 : 0 };
 
-  // --- Sentiment breakdown ---
   const positives = customers.filter((c) => c.sentiment === 'positive').length;
   const negatives = customers.filter((c) => c.sentiment === 'negative').length;
   const totalReacted = positives + negatives;
   const positiveRate = totalReacted ? Math.round((positives / totalReacted) * 1000) / 10 : 0;
 
-  // Positive rate over the last 12 weeks (by reaction date).
   const sentimentWeeks = [];
   for (let i = 11; i >= 0; i--) {
-    const weekEnd = new Date(today);
-    weekEnd.setDate(weekEnd.getDate() - i * 7);
-    const weekStart = new Date(weekEnd);
-    weekStart.setDate(weekStart.getDate() - 7);
+    const weekEnd = new Date(today); weekEnd.setDate(weekEnd.getDate() - i * 7);
+    const weekStart = new Date(weekEnd); weekStart.setDate(weekStart.getDate() - 7);
     const upper = i === 0 ? now : weekEnd;
-    const pos = customers.filter((c) => {
-      if (c.sentiment !== 'positive') return false;
-      const d = new Date(c.reactedAt || c.createdAt);
-      return d >= weekStart && d < upper;
-    }).length;
-    const neg = customers.filter((c) => {
-      if (c.sentiment !== 'negative') return false;
-      const d = new Date(c.reactedAt || c.createdAt);
-      return d >= weekStart && d < upper;
-    }).length;
+    const pos = customers.filter((c) => { if (c.sentiment !== 'positive') return false; const d = new Date(c.reactedAt || c.createdAt); return d >= weekStart && d < upper; }).length;
+    const neg = customers.filter((c) => { if (c.sentiment !== 'negative') return false; const d = new Date(c.reactedAt || c.createdAt); return d >= weekStart && d < upper; }).length;
     const tot = pos + neg;
-    sentimentWeeks.push({
-      label: `W${12 - i}`,
-      positive: pos,
-      negative: neg,
-      rate: tot ? Math.round((pos / tot) * 1000) / 10 : null,
-    });
+    sentimentWeeks.push({ label: `W${12 - i}`, positive: pos, negative: neg, rate: tot ? Math.round((pos / tot) * 1000) / 10 : null });
   }
 
-  const keptOffGoogleThisMonth = feedback.filter((f) => {
-    const d = new Date(f.createdAt);
-    return d.getFullYear() === thisYear && d.getMonth() === thisMonth;
-  }).length;
+  const keptOffGoogleThisMonth = feedback.filter((f) => { const d = new Date(f.createdAt); return d.getFullYear() === thisYear && d.getMonth() === thisMonth; }).length;
+  const recentFeedback = feedback.slice(0, 8).map((f) => ({ id: f.id, customerName: f.customerName, phone: f.phone, complaint: f.complaint, date: f.createdAt }));
 
-  const recentFeedback = feedback
-    .slice(0, 8)
-    .map((f) => ({
-      id: f.id,
-      customerName: f.customerName,
-      phone: f.phone,
-      complaint: f.complaint,
-      date: f.createdAt,
-    }));
-
-  res.json({
-    total: reviews.length,
-    reviewsThisMonth,
-    reviewsLastMonth,
-    momPct,
-    weeks,
-    dow,
-    dowLabels: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
-    avgTimeToReview,
-    funnel,
-    sentiment: {
-      positives,
-      negatives,
-      totalReacted,
-      positiveRate,
-      weeks: sentimentWeeks,
-      keptOffGoogleThisMonth,
-      recentFeedback,
-    },
-  });
+  res.json({ total: reviews.length, reviewsThisMonth, reviewsLastMonth, momPct, weeks, dow, dowLabels: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'], avgTimeToReview, funnel, sentiment: { positives, negatives, totalReacted, positiveRate, weeks: sentimentWeeks, keptOffGoogleThisMonth, recentFeedback } });
 });
 
-// --- Activity feed ---
-router.get('/activity', auth, (req, res) => {
+router.get('/activity', auth, async (req, res) => {
   const db = getDb();
-  const list = db.data.activities
-    .filter((a) => a.businessId === req.business.id)
-    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-    .slice(0, 30);
-  res.json({ activities: list });
+  const { data } = await db.from('activities').select('*').eq('business_id', req.business.id).order('created_at', { ascending: false }).limit(30);
+  res.json({ activities: (data || []).map(mapActivity) });
 });
 
-// --- Settings ---
 router.get('/settings', auth, (req, res) => {
   const b = req.business;
-  res.json({
-    businessName: b.name,
-    googleReviewLink: b.googleReviewLink,
-    feedbackLink: b.feedbackLink,
-    messageTemplate: b.messageTemplate,
-    delaySeconds: b.delaySeconds,
-    demoMode: b.demoMode,
-    reviewsReceived: b.reviewsReceived || 0,
-    placeId: b.placeId || '',
-    whatsappStatus: b.whatsapp?.status || 'not_connected',
-    whatsappBsp: b.whatsapp?.bsp || '',
-  });
+  res.json({ businessName: b.name, googleReviewLink: b.googleReviewLink, feedbackLink: b.feedbackLink, messageTemplate: b.messageTemplate, delaySeconds: b.delaySeconds, demoMode: b.demoMode, reviewsReceived: b.reviewsReceived || 0, placeId: b.placeId || '', whatsappStatus: b.whatsapp?.status || 'not_connected', whatsappBsp: b.whatsapp?.bsp || '' });
 });
 
 router.put('/settings', auth, async (req, res) => {
   const db = getDb();
   const b = req.business;
   const { businessName, googleReviewLink, feedbackLink, messageTemplate, delaySeconds, demoMode, placeId } = req.body || {};
-  if (typeof businessName === 'string' && businessName.trim()) b.name = businessName.trim();
-  if (typeof googleReviewLink === 'string') b.googleReviewLink = googleReviewLink.trim();
-  if (typeof feedbackLink === 'string') b.feedbackLink = feedbackLink.trim();
-  if (typeof messageTemplate === 'string' && messageTemplate.trim()) b.messageTemplate = messageTemplate.trim();
-  if (Number.isFinite(Number(delaySeconds))) b.delaySeconds = Number(delaySeconds);
-  if (typeof demoMode === 'boolean') b.demoMode = demoMode;
-  if (typeof placeId === 'string') b.placeId = placeId.trim();
-  await db.write();
-  res.json({
-    businessName: b.name,
-    googleReviewLink: b.googleReviewLink,
-    feedbackLink: b.feedbackLink,
-    messageTemplate: b.messageTemplate,
-    delaySeconds: b.delaySeconds,
-    demoMode: b.demoMode,
-    reviewsReceived: b.reviewsReceived || 0,
-    placeId: b.placeId || '',
-    whatsappStatus: b.whatsapp?.status || 'not_connected',
-    whatsappBsp: b.whatsapp?.bsp || '',
-  });
+  const updates = {};
+  if (typeof businessName === 'string' && businessName.trim()) updates.name = businessName.trim();
+  if (typeof googleReviewLink === 'string') updates.google_review_link = googleReviewLink.trim();
+  if (typeof feedbackLink === 'string') updates.feedback_link = feedbackLink.trim();
+  if (typeof messageTemplate === 'string' && messageTemplate.trim()) updates.message_template = messageTemplate.trim();
+  if (Number.isFinite(Number(delaySeconds))) updates.delay_seconds = Number(delaySeconds);
+  if (typeof demoMode === 'boolean') updates.demo_mode = demoMode;
+  if (typeof placeId === 'string') updates.place_id = placeId.trim();
+  if (Object.keys(updates).length > 0) await db.from('businesses').update(updates).eq('id', b.id);
+  const updated = { ...b, ...updates };
+  res.json({ businessName: updated.name, googleReviewLink: updated.googleReviewLink, feedbackLink: updated.feedbackLink, messageTemplate: updated.messageTemplate, delaySeconds: updated.delaySeconds, demoMode: updated.demoMode, reviewsReceived: updated.reviewsReceived || 0, placeId: updated.placeId || '', whatsappStatus: updated.whatsapp?.status || 'not_connected', whatsappBsp: updated.whatsapp?.bsp || '' });
 });
 
 router.get('/message-preview', auth, (req, res) => {
   const b = req.business;
-  const message = renderTemplate(b.messageTemplate, {
-    customerName: 'Rahul Sharma',
-    businessName: b.name,
-    reviewLink: b.googleReviewLink,
-  });
+  const message = renderTemplate(b.messageTemplate, { customerName: 'Rahul Sharma', businessName: b.name, reviewLink: b.googleReviewLink });
   res.json({ message, effectiveDelay: effectiveDelay(b) });
 });
 
-// --- Reviews counter (manual, backed by the reviews collection) ---
 router.post('/reviews/increment', auth, async (req, res) => {
   const db = getDb();
-  const review = {
-    id: newId('rev'),
-    businessId: req.business.id,
-    customerId: null,
-    customerName: null,
-    rating: 5,
-    requestId: null,
-    sentAt: null,
-    createdAt: new Date().toISOString(),
-  };
-  db.data.reviews.push(review);
-  req.business.reviewsReceived = db.data.reviews.filter((r) => r.businessId === req.business.id).length;
-  await db.write();
-  res.json({ reviewsReceived: req.business.reviewsReceived });
+  await db.from('reviews').insert({ id: newId('rev'), business_id: req.business.id, customer_id: null, customer_name: null, rating: 5, request_id: null, sent_at: null, created_at: new Date().toISOString() });
+  const { count } = await db.from('reviews').select('*', { count: 'exact', head: true }).eq('business_id', req.business.id);
+  await db.from('businesses').update({ reviews_received: count || 0 }).eq('id', req.business.id);
+  res.json({ reviewsReceived: count || 0 });
 });
 
-router.post('/reviews/decrement', auth, (req, res) => {
+router.post('/reviews/decrement', auth, async (req, res) => {
   const db = getDb();
-  const mine = db.data.reviews
-    .filter((r) => r.businessId === req.business.id)
-    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-  if (mine.length > 0) db.data.reviews = db.data.reviews.filter((r) => r.id !== mine[0].id);
-  req.business.reviewsReceived = db.data.reviews.filter((r) => r.businessId === req.business.id).length;
-  db.write();
-  res.json({ reviewsReceived: req.business.reviewsReceived });
+  const { data: mine } = await db.from('reviews').select('*').eq('business_id', req.business.id).order('created_at', { ascending: false }).limit(1);
+  if (mine && mine.length > 0) await db.from('reviews').delete().eq('id', mine[0].id);
+  const { count } = await db.from('reviews').select('*', { count: 'exact', head: true }).eq('business_id', req.business.id);
+  await db.from('businesses').update({ reviews_received: count || 0 }).eq('id', req.business.id);
+  res.json({ reviewsReceived: count || 0 });
 });
 
-// --- Admin: manage client businesses (was previously unauthenticated — fixed) ---
-router.get('/admin/businesses', adminAuth, (req, res) => {
+router.get('/admin/businesses', adminAuth, async (req, res) => {
   const db = getDb();
-  const list = db.data.businesses.map((b) => ({
-    id: b.id,
-    name: b.name,
-    ownerEmail: b.ownerEmail,
-    subscriptionStatus: b.subscriptionStatus,
-    isDemo: !!b.isDemo,
-    requestsSent: db.data.requests.filter((r) => r.businessId === b.id && r.status !== 'Scheduled').length,
-    customersCount: db.data.customers.filter((c) => c.businessId === b.id).length,
-    createdAt: b.createdAt,
-    whatsapp: { bsp: b.whatsapp?.bsp || '', status: b.whatsapp?.status || 'not_connected', phoneNumberId: b.whatsapp?.phoneNumberId || '' },
-    placeId: b.placeId || '',
-    googleReviewLink: b.googleReviewLink || '',
-  }));
+  const { data: businesses } = await db.from('businesses').select('*');
+  const list = [];
+  for (const b of (businesses || [])) {
+    const { count: reqCount } = await db.from('requests').select('*', { count: 'exact', head: true }).eq('business_id', b.id).neq('status', 'Scheduled');
+    const { count: custCount } = await db.from('customers').select('*', { count: 'exact', head: true }).eq('business_id', b.id);
+    list.push({
+      id: b.id, name: b.name, ownerEmail: b.owner_email, subscriptionStatus: b.subscription_status, isDemo: !!b.is_demo,
+      requestsSent: reqCount || 0, customersCount: custCount || 0, createdAt: b.created_at,
+      whatsapp: { bsp: b.whatsapp_bsp || '', status: b.whatsapp_status || 'not_connected', phoneNumberId: b.whatsapp_phone_number_id || '' },
+      placeId: b.place_id || '', googleReviewLink: b.google_review_link || '',
+    });
+  }
   res.json({ businesses: list });
 });
 
-// Add a new client. The admin sets an initial password the owner can change later
-// from their own Settings — a future "reset password" flow can replace this.
 router.post('/admin/businesses', adminAuth, async (req, res) => {
   const db = getDb();
   const { name, ownerEmail, password, googleReviewLink } = req.body || {};
-  if (!name || !ownerEmail || !password) {
-    return res.status(400).json({ error: 'name, ownerEmail and password are required' });
-  }
-  if (db.data.businesses.some((b) => b.ownerEmail === ownerEmail)) {
-    return res.status(409).json({ error: 'A business with that owner email already exists' });
-  }
+  if (!name || !ownerEmail || !password) return res.status(400).json({ error: 'name, ownerEmail and password are required' });
+  const { data: existing } = await db.from('businesses').select('*').eq('owner_email', ownerEmail).single();
+  if (existing) return res.status(409).json({ error: 'A business with that owner email already exists' });
   const business = {
-    id: newId('biz'),
-    name: String(name).trim(),
-    ownerEmail: String(ownerEmail).trim(),
-    passwordHash: hashPassword(password),
-    isDemo: false,
-    googleReviewLink: googleReviewLink ? String(googleReviewLink).trim() : '',
-    feedbackLink: '',
-    address: '',
-    phone: '',
-    description: '',
-    messageTemplate: defaultTemplate,
-    delaySeconds: 7200,
-    demoMode: false,
-    subscriptionStatus: 'trial',
-    createdAt: new Date().toISOString(),
-    reviewsReceived: 0,
-    placeId: '',
-    whatsapp: { bsp: '', apiKey: '', phoneNumberId: '', status: 'not_connected' },
+    id: newId('biz'), name: String(name).trim(), owner_email: String(ownerEmail).trim(), password_hash: hashPassword(password), is_demo: false,
+    google_review_link: googleReviewLink ? String(googleReviewLink).trim() : '', feedback_link: '', address: '', phone: '', description: '',
+    message_template: defaultTemplate, delay_seconds: 7200, demo_mode: false, subscription_status: 'trial', created_at: new Date().toISOString(),
+    reviews_received: 0, place_id: '', whatsapp_bsp: '', whatsapp_api_key: '', whatsapp_phone_number_id: '', whatsapp_status: 'not_connected',
   };
-  db.data.businesses.push(business);
-  await db.write();
-  res.json({ business: { id: business.id, name: business.name, ownerEmail: business.ownerEmail } });
+  await db.from('businesses').insert(business);
+  res.json({ business: { id: business.id, name: business.name, ownerEmail: business.owner_email } });
 });
 
-// Remove a client and all of their data. The seeded demo business can't be removed.
 router.delete('/admin/businesses/:id', adminAuth, async (req, res) => {
   const db = getDb();
-  const business = db.data.businesses.find((b) => b.id === req.params.id);
+  const { data: business } = await db.from('businesses').select('*').eq('id', req.params.id).single();
   if (!business) return res.status(404).json({ error: 'Business not found' });
-  if (business.isDemo) return res.status(400).json({ error: 'The demo account cannot be removed' });
+  if (business.is_demo) return res.status(400).json({ error: 'The demo account cannot be removed' });
   const id = business.id;
-  db.data.businesses = db.data.businesses.filter((b) => b.id !== id);
-  db.data.customers = db.data.customers.filter((c) => c.businessId !== id);
-  db.data.requests = db.data.requests.filter((r) => r.businessId !== id);
-  db.data.reviews = db.data.reviews.filter((r) => r.businessId !== id);
-  db.data.feedback = db.data.feedback.filter((f) => f.businessId !== id);
-  db.data.activities = db.data.activities.filter((a) => a.businessId !== id);
-  db.data.pendingSends = db.data.pendingSends.filter((s) => s.businessId !== id);
-  db.data.sessions = db.data.sessions.filter((s) => s.businessId !== id);
-  await db.write();
+  await db.from('customers').delete().eq('business_id', id);
+  await db.from('requests').delete().eq('business_id', id);
+  await db.from('reviews').delete().eq('business_id', id);
+  await db.from('feedback').delete().eq('business_id', id);
+  await db.from('activities').delete().eq('business_id', id);
+  await db.from('pending_sends').delete().eq('business_id', id);
+  await db.from('sessions').delete().eq('business_id', id);
+  await db.from('businesses').delete().eq('id', id);
   res.json({ ok: true });
 });
 
-// Onboard (or update) a client's WhatsApp Business API connection. The API key never
-// gets sent back down to the client dashboard — see publicBusiness() in auth.js.
 router.put('/admin/businesses/:id/whatsapp', adminAuth, async (req, res) => {
   const db = getDb();
-  const business = db.data.businesses.find((b) => b.id === req.params.id);
+  const { data: business } = await db.from('businesses').select('*').eq('id', req.params.id).single();
   if (!business) return res.status(404).json({ error: 'Business not found' });
   const { bsp, apiKey, phoneNumberId, status } = req.body || {};
-  business.whatsapp = {
-    bsp: typeof bsp === 'string' ? bsp.trim() : (business.whatsapp?.bsp || ''),
-    apiKey: typeof apiKey === 'string' && apiKey.trim() ? apiKey.trim() : (business.whatsapp?.apiKey || ''),
-    phoneNumberId: typeof phoneNumberId === 'string' ? phoneNumberId.trim() : (business.whatsapp?.phoneNumberId || ''),
-    status: status || (apiKey ? 'connected' : (business.whatsapp?.status || 'not_connected')),
-  };
-  await db.write();
-  res.json({ whatsapp: { bsp: business.whatsapp.bsp, status: business.whatsapp.status, phoneNumberId: business.whatsapp.phoneNumberId } });
+  const updates = {};
+  if (typeof bsp === 'string') updates.whatsapp_bsp = bsp.trim();
+  if (typeof apiKey === 'string' && apiKey.trim()) updates.whatsapp_api_key = apiKey.trim();
+  if (typeof phoneNumberId === 'string') updates.whatsapp_phone_number_id = phoneNumberId.trim();
+  updates.whatsapp_status = status || (apiKey ? 'connected' : (business.whatsapp_status || 'not_connected'));
+  await db.from('businesses').update(updates).eq('id', req.params.id);
+  res.json({ whatsapp: { bsp: updates.whatsapp_bsp || business.whatsapp_bsp, status: updates.whatsapp_status, phoneNumberId: updates.whatsapp_phone_number_id || business.whatsapp_phone_number_id } });
 });
 
-// Set (or update) the Google Place ID used to pull real reviews for a client.
 router.put('/admin/businesses/:id/google', adminAuth, async (req, res) => {
   const db = getDb();
-  const business = db.data.businesses.find((b) => b.id === req.params.id);
+  const { data: business } = await db.from('businesses').select('*').eq('id', req.params.id).single();
   if (!business) return res.status(404).json({ error: 'Business not found' });
   const { placeId, googleReviewLink } = req.body || {};
-  if (typeof placeId === 'string') business.placeId = placeId.trim();
-  if (typeof googleReviewLink === 'string' && googleReviewLink.trim()) business.googleReviewLink = googleReviewLink.trim();
-  await db.write();
-  res.json({ placeId: business.placeId, googleReviewLink: business.googleReviewLink });
+  const updates = {};
+  if (typeof placeId === 'string') updates.place_id = placeId.trim();
+  if (typeof googleReviewLink === 'string' && googleReviewLink.trim()) updates.google_review_link = googleReviewLink.trim();
+  if (Object.keys(updates).length > 0) await db.from('businesses').update(updates).eq('id', req.params.id);
+  res.json({ placeId: updates.place_id || business.place_id, googleReviewLink: updates.google_review_link || business.google_review_link });
 });
 
-// --- Reset demo data ---
 router.post('/reset-db', auth, async (req, res) => {
   const db = getDb();
   const fresh = (await import('./db.js')).buildSeedExport();
-  db.data = fresh;
-  await db.write();
+  // Clear all tables and reseed
+  await db.from('activities').delete().neq('id', '__never_match__');
+  await db.from('pending_sends').delete().neq('id', '__never_match__');
+  await db.from('feedback').delete().neq('id', '__never_match__');
+  await db.from('reviews').delete().neq('id', '__never_match__');
+  await db.from('requests').delete().neq('id', '__never_match__');
+  await db.from('customers').delete().neq('id', '__never_match__');
+  await db.from('sessions').delete().neq('token', '__never_match__');
+  await db.from('businesses').delete().neq('id', '__never_match__');
+
+  for (const b of fresh.businesses) await db.from('businesses').insert(toBusinessRow(b));
+  for (const c of fresh.customers) await db.from('customers').insert(toCustomerRow(c));
+  for (const r of fresh.requests) await db.from('requests').insert(toRequestRow(r));
+  for (const r of fresh.reviews) await db.from('reviews').insert(toReviewRow(r));
+  for (const f of fresh.feedback) await db.from('feedback').insert(toFeedbackRow(f));
+  for (const a of fresh.activities) await db.from('activities').insert(toActivityRow(a));
+
   resumeScheduledSends();
   res.json({ ok: true });
 });
+
+function toBusinessRow(obj) {
+  return { id: obj.id, name: obj.name, owner_email: obj.ownerEmail, password_hash: obj.passwordHash, is_demo: obj.isDemo, google_review_link: obj.googleReviewLink, feedback_link: obj.feedbackLink, address: obj.address, phone: obj.phone, description: obj.description, message_template: obj.messageTemplate, delay_seconds: obj.delaySeconds, demo_mode: obj.demoMode, subscription_status: obj.subscriptionStatus, created_at: obj.createdAt, place_id: obj.placeId, whatsapp_bsp: obj.whatsapp?.bsp || '', whatsapp_api_key: obj.whatsapp?.apiKey || '', whatsapp_phone_number_id: obj.whatsapp?.phoneNumberId || '', whatsapp_status: obj.whatsapp?.status || 'not_connected', reviews_received: obj.reviewsReceived || 0 };
+}
+function toCustomerRow(obj) {
+  return { id: obj.id, business_id: obj.businessId, name: obj.name, phone: obj.phone, custom_message: obj.customMessage || '', stage: obj.stage || 'to_send', sentiment: obj.sentiment || null, complaint: obj.complaint || '', created_at: obj.createdAt, last_request_at: obj.lastRequestAt, last_request_status: obj.lastRequestStatus };
+}
+function toRequestRow(obj) {
+  return { id: obj.id, business_id: obj.businessId, customer_id: obj.customerId, customer_name: obj.customerName, phone: obj.phone, message: obj.message, status: obj.status, reaction: obj.reaction || null, feedback_text: obj.feedbackText || null, created_at: obj.createdAt, sent_at: obj.sentAt, opened_at: obj.openedAt, reviewed_at: obj.reviewedAt };
+}
+function toReviewRow(obj) {
+  return { id: obj.id, business_id: obj.businessId, customer_id: obj.customerId, customer_name: obj.customerName, rating: obj.rating, text: obj.text || '', source: obj.source || 'internal', google_review_id: obj.googleReviewId || null, request_id: obj.requestId, sent_at: obj.sentAt, created_at: obj.createdAt };
+}
+function toFeedbackRow(obj) {
+  return { id: obj.id, business_id: obj.businessId, customer_id: obj.customerId, customer_name: obj.customerName, phone: obj.phone, complaint: obj.complaint || '', google_review_id: obj.googleReviewId || null, created_at: obj.createdAt, submitted_at: obj.submittedAt || null };
+}
+function toActivityRow(obj) {
+  return { id: obj.id, business_id: obj.businessId, type: obj.type, customer_name: obj.customerName, phone: obj.phone, message: obj.message, status: obj.status, created_at: obj.createdAt };
+}
 
 export default router;

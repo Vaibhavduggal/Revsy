@@ -5,9 +5,8 @@ data/
 dist/
 .vite/
 .next/
-
 .vercel
-'env*'  
-'SUPABASE_*'  
-'*.env*'  
-'! .env.example'  
+.env
+.env.*
+.env.local
+.env.*.local

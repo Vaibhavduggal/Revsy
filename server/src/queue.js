@@ -1,12 +1,7 @@
-import { getDb, getBusiness } from './db.js';
+import { getDb, getBusiness, mapPendingSend, mapCustomer, mapRequest, mapActivity } from './db.js';
+import { recordActivity } from './auth.js';
 
-// Single seam for actually delivering a WhatsApp message. Today it is a simulated
-// no-op (we have no live WhatsApp API). Swap the body for a real AiSensy/Twilio
-// call later without touching the scheduler/poller logic.
 export async function sendWhatsAppMessage(phone, message) {
-  // Simulated delivery. Replace with: await aisensy.send({ phone, message });
-  // Test seam: a message containing this marker forces a delivery failure so the
-  // retry/backoff/failed transition can be exercised without a real API.
   if (message && message.includes('__FORCE_FAIL__')) {
     throw new Error('Simulated delivery failure');
   }
@@ -14,79 +9,95 @@ export async function sendWhatsAppMessage(phone, message) {
   return { delivered: true, at: new Date().toISOString() };
 }
 
-// Ensure the persistent pending_sends table exists on the data model.
-export function ensurePendingSends(db) {
-  if (!db.data.pendingSends) db.data.pendingSends = [];
-}
-
-export function getDueSends(db) {
-  ensurePendingSends(db);
+export async function getDueSends() {
+  const db = getDb();
   const nowIso = new Date().toISOString();
-  return db.data.pendingSends.filter(
-    (s) => s.status === 'pending' && s.scheduledTime <= nowIso
-  );
+  const { data } = await db
+    .from('pending_sends')
+    .select('*')
+    .eq('status', 'pending')
+    .lte('scheduled_time', nowIso);
+  return (data || []).map(mapPendingSend);
 }
 
-// Enqueue a scheduled send. Returns the created row.
-export function enqueueSend(db, { businessId, customerId, phone, message, delaySeconds }) {
-  ensurePendingSends(db);
+export async function enqueueSend({ businessId, customerId, phone, message, delaySeconds }) {
+  const db = getDb();
   const delay = Number.isFinite(delaySeconds) ? Math.max(0, delaySeconds) : 0;
   const scheduledTime = new Date(Date.now() + delay * 1000).toISOString();
   const row = {
     id: `ps_${Date.now()}_${Math.floor(Math.random() * 1e6)}`,
-    businessId,
-    customerId,
+    business_id: businessId,
+    customer_id: customerId,
     phone,
     message,
-    scheduledTime,
+    scheduled_time: scheduledTime,
     status: 'pending',
-    retryCount: 0,
+    retry_count: 0,
     error: null,
-    createdAt: new Date().toISOString(),
+    created_at: new Date().toISOString(),
+    sent_at: null,
   };
-  db.data.pendingSends.push(row);
-  return row;
+  await db.from('pending_sends').insert(row);
+  return mapPendingSend(row);
 }
 
 function backoffMs(retryCount) {
-  // 1m, 5m, 15m — exponential, capped well under the 3-retry limit.
   return Math.min(15 * 60 * 1000, 60 * 1000 * Math.pow(5, retryCount));
 }
 
-// Process a single row immediately (used by the manual nudge from the API).
 export async function processDueNow(row) {
-  const db = getDb();
   const nowIso = new Date().toISOString();
-  // Treat rows scheduled within the next 5s as due, so a just-enqueued 0s-delay
-  // "send now" row is delivered immediately rather than waiting for the poller.
   const due = row.status === 'pending' && row.scheduledTime <= new Date(Date.now() + 5000).toISOString();
   if (!due) return;
-  await processRow(db, row);
+  await processRow(row);
 }
 
-// Process a single due row: deliver, mark sent on success, or retry/fail on error.
-async function processRow(db, row) {
-  const business = getBusiness(row.businessId);
-  const customer = db.data.customers.find((c) => c.id === row.customerId);
+async function processRow(row) {
+  const db = getDb();
+  const business = await getBusiness(row.businessId);
+  const { data: custData } = await db
+    .from('customers')
+    .select('*')
+    .eq('id', row.customerId)
+    .single();
+  const customer = custData ? mapCustomer(custData) : null;
+
   try {
     await sendWhatsAppMessage(row.phone, row.message);
-    row.status = 'sent';
-    row.sentAt = new Date().toISOString();
-    row.error = null;
-    // Reflect the send on the customer record.
-    const request = db.data.requests.find((r) => r.customerId === row.customerId && r.status === 'Scheduled');
-    if (request) {
-      request.status = 'Sent';
-      request.sentAt = row.sentAt;
-      request.message = row.message;
+    // Update pending_sends row
+    await db.from('pending_sends').update({
+      status: 'sent',
+      sent_at: new Date().toISOString(),
+      error: null,
+    }).eq('id', row.id);
+
+    // Update the request
+    const { data: reqData } = await db
+      .from('requests')
+      .select('*')
+      .eq('customer_id', row.customerId)
+      .eq('status', 'Scheduled')
+      .single();
+    if (reqData) {
+      await db.from('requests').update({
+        status: 'Sent',
+        sent_at: new Date().toISOString(),
+        message: row.message,
+      }).eq('id', reqData.id);
     }
+
+    // Update customer
     if (customer) {
-      customer.stage = 'sent';
-      customer.lastRequestAt = row.sentAt;
-      customer.lastRequestStatus = 'Sent';
+      await db.from('customers').update({
+        stage: 'sent',
+        last_request_at: new Date().toISOString(),
+        last_request_status: 'Sent',
+      }).eq('id', customer.id);
     }
+
+    // Record activity
     if (business) {
-      recordActivityLocal(db, business.id, {
+      await recordActivity(business.id, {
         type: 'message_sent',
         customerName: customer?.name || row.phone,
         phone: row.phone,
@@ -95,38 +106,28 @@ async function processRow(db, row) {
       });
     }
   } catch (e) {
-    row.retryCount += 1;
-    row.error = e.message || String(e);
-    if (row.retryCount >= 3) {
-      row.status = 'failed';
+    const retryCount = (row.retryCount || 0) + 1;
+    const update = {
+      retry_count: retryCount,
+      error: e.message || String(e),
+    };
+    if (retryCount >= 3) {
+      update.status = 'failed';
     } else {
-      // Retry with exponential backoff by pushing the scheduled time forward.
-      row.scheduledTime = new Date(Date.now() + backoffMs(row.retryCount)).toISOString();
+      update.scheduled_time = new Date(Date.now() + backoffMs(retryCount)).toISOString();
     }
+    await db.from('pending_sends').update(update).eq('id', row.id);
   }
 }
 
-function recordActivityLocal(db, businessId, data) {
-  db.data.activities.push({
-    id: `act_${Date.now()}_${Math.floor(Math.random() * 1e6)}`,
-    businessId,
-    createdAt: new Date().toISOString(),
-    ...data,
-  });
-}
-
-// Cron-style poller: every 60s, process all due rows, then persist.
 let timer = null;
 export function startSendPoller(intervalMs = 60000) {
-  const db = getDb();
-  ensurePendingSends(db);
   if (timer) clearInterval(timer);
   timer = setInterval(async () => {
     try {
-      const due = getDueSends(db);
+      const due = await getDueSends();
       if (due.length === 0) return;
-      for (const row of due) await processRow(db, row);
-      await db.write();
+      for (const row of due) await processRow(row);
     } catch (e) {
       console.error('Send poller error', e);
     }
@@ -134,37 +135,36 @@ export function startSendPoller(intervalMs = 60000) {
   return timer;
 }
 
-// Re-arm any pending rows from a previous run (survives restarts because they are
-// stored on disk in db.json, not in memory).
-export function resumePendingSends() {
-  const db = getDb();
-  ensurePendingSends(db);
-  const due = getDueSends(db);
+export async function resumePendingSends() {
+  const due = await getDueSends();
   if (due.length > 0) {
-    // Kick the poller immediately; it will process and persist.
-    (async () => {
-      for (const row of due) await processRow(db, row);
-      await db.write();
-    })();
+    for (const row of due) await processRow(row);
   }
 }
 
-// Manual retry of a failed row from the dashboard.
-export async function retrySend(db, rowId) {
-  const row = db.data.pendingSends.find((r) => r.id === rowId);
-  if (!row) return null;
-  row.status = 'pending';
-  row.scheduledTime = new Date().toISOString(); // send now
-  row.retryCount = 0;
-  row.error = null;
-  await processRow(db, row);
-  await db.write();
-  return row;
+export async function retrySend(rowId) {
+  const db = getDb();
+  const { data } = await db
+    .from('pending_sends')
+    .select('*')
+    .eq('id', rowId)
+    .single();
+  if (!data) return null;
+  const row = mapPendingSend(data);
+  await db.from('pending_sends').update({
+    status: 'pending',
+    scheduled_time: new Date().toISOString(),
+    retry_count: 0,
+    error: null,
+  }).eq('id', row.id);
+  await processRow({ ...row, status: 'pending', scheduledTime: new Date().toISOString(), retryCount: 0, error: null });
+  return { ...row, status: 'pending', scheduledTime: new Date().toISOString(), retryCount: 0, error: null };
 }
 
-export function getFailedSends(db, businessId) {
-  ensurePendingSends(db);
-  return db.data.pendingSends.filter(
-    (s) => s.status === 'failed' && (!businessId || s.businessId === businessId)
-  );
+export async function getFailedSends(businessId) {
+  const db = getDb();
+  let query = db.from('pending_sends').select('*').eq('status', 'failed');
+  if (businessId) query = query.eq('business_id', businessId);
+  const { data } = await query;
+  return (data || []).map(mapPendingSend);
 }

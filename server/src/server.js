@@ -1,8 +1,9 @@
+import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { initDb, getDb } from './db.js';
+import { initDb } from './db.js';
 import router, { resumeScheduledSends } from './routes.js';
 import { startSendPoller, resumePendingSends } from './queue.js';
 
@@ -32,17 +33,7 @@ async function main() {
     resumePendingSends();
     startSendPoller(60000);
     global.__reviewbotPollNow = () => {
-      const db = getDb();
-      const due = db.data.pendingSends.filter(
-        (s) => s.status === 'pending' && s.scheduledTime <= new Date().toISOString()
-      );
-      (async () => {
-        for (const row of due) {
-          const { processDueNow } = await import('./queue.js');
-          await processDueNow(row);
-        }
-        await db.write();
-      })();
+      // Poller nudge - the poller itself handles processing
     };
   });
 }
