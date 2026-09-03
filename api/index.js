@@ -1,6 +1,5 @@
-import { getApp } from '../server/src/app.js';
-
-export default async function handler(req, res) {
-  const app = await getApp();
+module.exports = async (req, res) => {
+  const mod = await import('../server/src/app.js');
+  const app = await mod.getApp();
   return app(req, res);
-}
+};
