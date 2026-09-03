@@ -76,6 +76,7 @@ export const api = {
   markReviewRead: (id) => request('POST', `/reviews/${id}/read`),
   summaries: () => request('GET', '/reviews/summaries'),
   markSummaryRead: (id) => request('POST', `/reviews/summaries/${id}/read`),
+  markIssueRead: (issueId) => request('POST', `/reviews/summaries/issues/${issueId}/read`),
 };
 
 export const adminApi = {

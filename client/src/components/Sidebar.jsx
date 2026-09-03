@@ -8,6 +8,7 @@ export function Sidebar() {
 
   const links = [
     { to: '/dashboard', label: 'Dashboard', icon: Icon.chart },
+    { to: '/reviews', label: 'Reviews', icon: Icon.star },
     { to: '/customers', label: 'Customers', icon: Icon.users },
     { to: '/messages', label: 'Messages', icon: Icon.chat },
     { to: '/analytics', label: 'Analytics', icon: Icon.line },

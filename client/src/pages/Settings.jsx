@@ -49,7 +49,9 @@ export default function Settings() {
 
   const delayLabel = form.demoMode
     ? 'Demo mode: send 10 seconds after a customer is added'
-    : `Normal: ${Number(form.delaySeconds) / 3600} hour(s) after a customer is added`;
+    : Number(form.delaySeconds) === 0
+      ? 'Send immediately after a customer is added'
+      : `Send after ${Math.round(Number(form.delaySeconds) / 60)} minute(s) (${form.delaySeconds}s) after a customer is added`;
 
   return (
     <div className="page">
@@ -79,8 +81,45 @@ export default function Settings() {
             <span className="csv-hint">Available variables: {TEMPLATE_VARS}</span>
           </div>
           <div className="field">
-            <label>Delay before sending (seconds)</label>
-            <input className="input" type="number" min="0" value={form.delaySeconds} onChange={(e) => update('delaySeconds', Number(e.target.value))} disabled={form.demoMode} />
+            <label>Automation timing</label>
+            <select
+              className="select"
+              value={form.demoMode ? 'demo' : form.delaySeconds === 0 ? 'immediate' : 'custom'}
+              onChange={(e) => {
+                const v = e.target.value;
+                if (v === 'immediate') { update('delaySeconds', 0); update('demoMode', false); }
+                else if (v === 'custom' && form.delaySeconds === 0) { update('delaySeconds', 1800); update('demoMode', false); }
+              }}
+              disabled={form.demoMode && false}
+            >
+              <option value="immediate">Send immediately</option>
+              <option value="custom">Send after: custom delay below</option>
+            </select>
+          </div>
+          <div className="field">
+            <label>Custom delay</label>
+            <div className="flex" style={{ gap: 8 }}>
+              <input
+                className="input" type="number" min="0"
+                value={Math.round(Number(form.delaySeconds) / 60)}
+                onChange={(e) => update('delaySeconds', Math.max(0, Number(e.target.value) * 60))}
+                disabled={form.demoMode} placeholder="30"
+              />
+              <select
+                className="select" style={{ maxWidth: 130 }}
+                value="minutes"
+                onChange={(e) => {
+                  const mins = Math.round(Number(form.delaySeconds) / 60) || 30;
+                  if (e.target.value === 'hours') update('delaySeconds', mins * 3600);
+                  else update('delaySeconds', mins * 60);
+                }}
+                disabled={form.demoMode}
+              >
+                <option value="minutes">minutes</option>
+                <option value="hours">hours</option>
+              </select>
+            </div>
+            <span className="csv-hint">Maps to delaySeconds ({form.delaySeconds}s). Default 30 minutes (1800s).</span>
           </div>
           <div className="field">
             <div className="flex between">
@@ -105,7 +144,7 @@ export default function Settings() {
             businessName={form.businessName}
           />
           <div className="csv-hint" style={{ marginTop: 12, textAlign: 'center' }}>
-            Effective send delay: {form.demoMode ? '10 seconds' : `${Number(form.delaySeconds) / 3600} hour(s)`}
+            Effective send delay: {form.demoMode ? '10 seconds' : Number(form.delaySeconds) === 0 ? 'immediate' : `${Math.round(Number(form.delaySeconds) / 60)} min (${form.delaySeconds}s)`}
           </div>
         </div>
       </div>

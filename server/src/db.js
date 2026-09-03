@@ -139,6 +139,8 @@ function mapReview(row) {
     sentAt: row.sent_at,
     createdAt: row.created_at,
     isRead: !!row.is_read,
+    aiFlag: row.ai_flag || null,
+    aiIssueId: row.ai_issue_id || null,
   };
 }
 
@@ -153,6 +155,7 @@ function mapReviewSummary(row) {
     reviewCount: row.review_count,
     isRead: !!row.is_read,
     createdAt: row.created_at,
+    issues: Array.isArray(row.issues) ? row.issues : [],
   };
 }
 
@@ -309,6 +312,8 @@ function toReviewRow(obj) {
     sent_at: obj.sentAt,
     created_at: obj.createdAt,
     is_read: !!obj.isRead,
+    ai_flag: obj.aiFlag || null,
+    ai_issue_id: obj.aiIssueId || null,
   };
 }
 
@@ -323,6 +328,7 @@ function toReviewSummaryRow(obj) {
     review_count: obj.reviewCount,
     is_read: !!obj.isRead,
     created_at: obj.createdAt,
+    issues: Array.isArray(obj.issues) ? obj.issues : [],
   };
 }
 

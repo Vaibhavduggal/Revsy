@@ -8,6 +8,7 @@ import Landing from './pages/Landing.jsx';
 import Login from './pages/Login.jsx';
 import Signup from './pages/Signup.jsx';
 import Dashboard from './pages/Dashboard.jsx';
+import Reviews from './pages/Reviews.jsx';
 import Customers from './pages/Customers.jsx';
 import Messages from './pages/Messages.jsx';
 import Analytics from './pages/Analytics.jsx';
@@ -75,6 +76,7 @@ export default function App() {
       <Route path="/signup" element={<PublicOnly><Signup /></PublicOnly>} />
       <Route path="/onboarding" element={<OnboardingGate><Onboarding /></OnboardingGate>} />
       <Route path="/dashboard" element={<Protected><Dashboard /></Protected>} />
+      <Route path="/reviews" element={<Protected><Reviews /></Protected>} />
       <Route path="/customers" element={<Protected><Customers /></Protected>} />
       <Route path="/messages" element={<Protected><Messages /></Protected>} />
       <Route path="/analytics" element={<Protected><Analytics /></Protected>} />

@@ -1,7 +1,8 @@
 import { Router } from 'express';
-import { getDb, getBusiness, renderTemplate, hashPassword, verifyPassword, newToken, defaultTemplate, mapBusiness, mapCustomer, mapRequest, mapReview, mapFeedback, mapPendingSend, mapActivity } from './db.js';
+import { getDb, getBusiness, renderTemplate, hashPassword, verifyPassword, newToken, defaultTemplate, mapBusiness, mapCustomer, mapRequest, mapReview, mapReviewSummary, mapFeedback, mapPendingSend, mapActivity } from './db.js';
 import { auth, adminAuth, recordActivity, publicBusiness } from './auth.js';
 import { enqueueSend, retrySend, getFailedSends } from './queue.js';
+import { firstRunClustering, classifyOneReview, weeklyUpdateBusiness, getCurrentSummaryRow, issuesFromRow } from './ai.js';
 
 const router = Router();
 
@@ -13,7 +14,7 @@ function negativeFollowUp(link) {
 }
 
 function effectiveDelay(business) {
-  return business.demoMode ? 10 : Number(business.delaySeconds) || 7200;
+  return business.demoMode ? 10 : (Number.isFinite(Number(business.delaySeconds)) ? Number(business.delaySeconds) : 1800);
 }
 
 function newId(prefix) {
@@ -440,12 +441,67 @@ router.delete('/reviews/last', auth, async (req, res) => {
 router.get('/reviews/list', auth, async (req, res) => {
   const biz = req.business;
   const reviews = await getReviewsForBusiness(biz.id);
-  const positive = reviews.filter((r) => (r.rating || 5) >= 4).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).map((r) => ({ id: r.id, customerName: r.customerName || 'Anonymous', rating: r.rating, text: r.text || '', source: r.source || 'internal', createdAt: r.createdAt }));
-  const negativeFromReviews = reviews.filter((r) => (r.rating || 5) < 4).map((r) => ({ id: r.id, customerName: r.customerName || 'Anonymous', rating: r.rating, text: r.text || '', source: r.source || 'google', createdAt: r.createdAt }));
+  const positive = reviews.filter((r) => (r.rating || 5) >= 4).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).map((r) => ({ id: r.id, customerName: r.customerName || 'Anonymous', rating: r.rating, text: r.text || '', source: r.source || 'internal', createdAt: r.createdAt, isRead: !!r.isRead }));
+  const negativeFromReviews = reviews.filter((r) => (r.rating || 5) < 4).map((r) => ({ id: r.id, customerName: r.customerName || 'Anonymous', rating: r.rating, text: r.text || '', source: r.source || 'google', createdAt: r.createdAt, isRead: !!r.isRead, aiFlag: r.aiFlag || null, aiIssueId: r.aiIssueId || null }));
   const feedbackList = await getFeedbackForBusiness(biz.id);
-  const negativeFromFeedback = feedbackList.map((f) => ({ id: f.id, customerName: f.customerName || 'Anonymous', rating: null, text: f.complaint || '', source: 'internal', createdAt: f.createdAt }));
+  const negativeFromFeedback = feedbackList.map((f) => ({ id: f.id, customerName: f.customerName || 'Anonymous', rating: null, text: f.complaint || '', source: 'internal', createdAt: f.createdAt, isRead: true, aiFlag: null, aiIssueId: null }));
   const negative = [...negativeFromReviews, ...negativeFromFeedback].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   res.json({ positive, negative });
+});
+
+router.get('/reviews/all', auth, async (req, res) => {
+  const db = getDb();
+  const page = Math.max(1, parseInt(req.query.page || '1', 10));
+  const per = 20;
+  const { data, count } = await db.from('reviews').select('*', { count: 'exact' }).eq('business_id', req.business.id).order('created_at', { ascending: false }).range((page - 1) * per, page * per - 1);
+  res.json({ reviews: (data || []).map(mapReview), total: count || 0, page, perPage: per, pages: Math.ceil((count || 0) / per) });
+});
+
+router.post('/reviews/:id/read', auth, async (req, res) => {
+  const db = getDb();
+  await db.from('reviews').update({ is_read: true }).eq('id', req.params.id).eq('business_id', req.business.id);
+  res.json({ ok: true });
+});
+
+router.get('/reviews/summaries', auth, async (req, res) => {
+  const db = getDb();
+  const { data } = await db.from('review_summaries').select('*').eq('business_id', req.business.id).order('created_at', { ascending: false }).limit(10);
+  const list = (data || []).map(mapReviewSummary);
+  res.json({ summaries: list, current: list[0] || null });
+});
+
+router.post('/reviews/summaries/:id/read', auth, async (req, res) => {
+  const db = getDb();
+  await db.from('review_summaries').update({ is_read: true }).eq('id', req.params.id).eq('business_id', req.business.id);
+  res.json({ ok: true });
+});
+
+router.post('/reviews/summaries/issues/:issueId/read', auth, async (req, res) => {
+  const db = getDb();
+  const current = await getCurrentSummaryRow(req.business.id);
+  if (!current) return res.status(404).json({ error: 'No insights yet' });
+  const issues = issuesFromRow(current).map((i) => (i.id === req.params.issueId ? { ...i, is_read: true } : i));
+  await db.from('review_summaries').update({ issues }).eq('id', current.id);
+  res.json({ ok: true });
+});
+
+// Weekly cron: Vercel Cron calls GET /api/cron/weekly with Authorization: Bearer $CRON_SECRET
+router.get('/cron/weekly', async (req, res) => {
+  const secret = process.env.CRON_SECRET || '';
+  if (secret) {
+    const authz = req.headers.authorization || '';
+    if (authz !== `Bearer ${secret}`) return res.status(401).json({ error: 'Unauthorized' });
+  }
+  const db = getDb();
+  const { data: businesses } = await db.from('businesses').select('id').eq('approval_status', 'approved');
+  const results = [];
+  for (const b of (businesses || [])) {
+    try {
+      const r = await weeklyUpdateBusiness(b.id);
+      results.push({ businessId: b.id, ...r });
+    } catch (e) { results.push({ businessId: b.id, error: e.message }); }
+  }
+  res.json({ ok: true, results });
 });
 
 async function getValidGoogleAccessToken(business) {
@@ -510,9 +566,14 @@ router.post('/reviews/google/sync', auth, async (req, res) => {
       const { data: existingFeedback } = await db.from('feedback').select('*').eq('google_review_id', googleReviewId).limit(1).single();
       if (existingReview || existingFeedback) continue;
       const createdAt = new Date(gr.time * 1000).toISOString();
-      await db.from('reviews').insert({ id: newId('rev'), business_id: biz.id, customer_id: null, customer_name: gr.author_name, rating: gr.rating, text: gr.text || '', source: 'google', google_review_id: googleReviewId, request_id: null, sent_at: null, created_at: createdAt });
+      const newRevId = newId('rev');
+      await db.from('reviews').insert({ id: newRevId, business_id: biz.id, customer_id: null, customer_name: gr.author_name, rating: gr.rating, text: gr.text || '', source: 'google', google_review_id: googleReviewId, request_id: null, sent_at: null, created_at: createdAt, is_read: false, ai_flag: null, ai_issue_id: null });
       if (gr.rating < 4) {
         await db.from('feedback').insert({ id: newId('fb'), business_id: biz.id, customer_id: null, customer_name: gr.author_name, phone: '', complaint: gr.text || `${gr.rating}★ Google review`, google_review_id: googleReviewId, created_at: createdAt });
+        // immediate one-off AI classification (never blocks sync)
+        try {
+          await classifyOneReview(biz.id, { id: newRevId, rating: gr.rating, text: gr.text || '' });
+        } catch (e) { console.error('immediate AI classify failed (retry on cron):', e.message); }
       }
       added++;
     }
@@ -561,8 +622,10 @@ router.get('/analytics', auth, async (req, res) => {
     const weekEnd = new Date(today); weekEnd.setDate(weekEnd.getDate() - i * 7);
     const weekStart = new Date(weekEnd); weekStart.setDate(weekStart.getDate() - 7);
     const upper = i === 0 ? now : weekEnd;
-    const count = reviews.filter((r) => { const d = new Date(r.createdAt); return d >= weekStart && d < upper; }).length;
-    weeks.push({ label: `W${12 - i}`, count });
+    const inWeek = reviews.filter((r) => { const d = new Date(r.createdAt); return d >= weekStart && d < upper; });
+    const positive = inWeek.filter((r) => (r.rating || 5) >= 4).length;
+    const negative = inWeek.filter((r) => (r.rating || 5) < 4).length;
+    weeks.push({ label: `W${12 - i}`, count: inWeek.length, positive, negative });
   }
 
   const dow = [0, 0, 0, 0, 0, 0, 0];
@@ -870,6 +933,21 @@ router.post('/admin/businesses/:id/approve', adminAuth, async (req, res) => {
   const { data: b } = await db.from('businesses').select('*').eq('id', req.params.id).single();
   if (!b) return res.status(404).json({ error: 'Business not found' });
   await db.from('businesses').update({ approval_status: 'approved', approved_at: new Date().toISOString(), rejected_at: null }).eq('id', req.params.id);
+  // FIRST RUN: generate initial issues list from trailing 12 months (fire-and-forget, never blocks approval)
+  (async () => {
+    try {
+      const since = new Date(Date.now() - 365 * 86400000).toISOString();
+      const { data } = await db.from('reviews').select('*').eq('business_id', req.params.id).lt('rating', 4).gte('created_at', since).order('created_at', { ascending: true }).limit(200);
+      const negatives = (data || []).filter((r) => !r.ai_flag).map((r) => ({ id: r.id, rating: r.rating, text: r.text }));
+      if (negatives.length) await firstRunClustering(req.params.id, negatives);
+      else {
+        const cur = await getCurrentSummaryRow(req.params.id);
+        if (!cur) {
+          await db.from('review_summaries').insert({ id: newId('sum'), business_id: req.params.id, period_start: since, period_end: new Date().toISOString(), summary_text: '', areas_of_improvement: '', review_count: 0, is_read: false, created_at: new Date().toISOString(), issues: [] });
+        }
+      }
+    } catch (e) { console.error('first-run AI failed (retry on cron):', e.message); }
+  })();
   res.json({ ok: true });
 });
 
@@ -963,7 +1041,7 @@ router.post('/reset-db', auth, async (req, res) => {
 });
 
 function toBusinessRow(obj) {
-  return { id: obj.id, name: obj.name, owner_email: obj.ownerEmail, password: obj.passwordHash, is_demo: obj.isDemo, google_review_link: obj.googleReviewLink, feedback_link: obj.feedbackLink, address: obj.address, phone: obj.phone, description: obj.description, message_template: obj.messageTemplate, delay_seconds: obj.delaySeconds, demo_mode: obj.demoMode, subscription_status: obj.subscriptionStatus, created_at: obj.createdAt, place_id: obj.placeId, whatsapp_bsp: obj.whatsapp?.bsp || '', whatsapp_api_key: obj.whatsapp?.apiKey || '', whatsapp_phone_number_id: obj.whatsapp?.phoneNumberId || '', whatsapp_status: obj.whatsapp?.status || 'not_connected', reviews_received: obj.reviewsReceived || 0, google_access_token: obj.googleAccessToken || null, google_refresh_token: obj.googleRefreshToken || null, google_token_expires_at: obj.googleTokenExpiresAt || null, google_connected: !!obj.googleConnected, google_account_email: obj.googleAccountEmail || null, onboarding_completed: !!obj.onboardingCompleted };
+  return { id: obj.id, name: obj.name, owner_email: obj.ownerEmail, password: obj.passwordHash, is_demo: obj.isDemo, google_review_link: obj.googleReviewLink, feedback_link: obj.feedbackLink, address: obj.address, phone: obj.phone, description: obj.description, message_template: obj.messageTemplate, delay_seconds: obj.delaySeconds, demo_mode: obj.demoMode, subscription_status: obj.subscriptionStatus, created_at: obj.createdAt, place_id: obj.placeId, whatsapp_bsp: obj.whatsapp?.bsp || '', whatsapp_api_key: obj.whatsapp?.apiKey || '', whatsapp_phone_number_id: obj.whatsapp?.phoneNumberId || '', whatsapp_status: obj.whatsapp?.status || 'not_connected', reviews_received: obj.reviewsReceived || 0, google_access_token: obj.googleAccessToken || null, google_refresh_token: obj.googleRefreshToken || null, google_token_expires_at: obj.googleTokenExpiresAt || null, google_connected: !!obj.googleConnected, google_account_email: obj.googleAccountEmail || null, onboarding_completed: !!obj.onboardingCompleted, approval_status: obj.approvalStatus || 'pending_approval', pre_approved: !!obj.preApproved, approved_at: obj.approvedAt || null, rejected_at: obj.rejectedAt || null };
 }
 function toCustomerRow(obj) {
   return { id: obj.id, business_id: obj.businessId, name: obj.name, phone: obj.phone, custom_message: obj.customMessage || '', stage: obj.stage || 'to_send', sentiment: obj.sentiment || null, complaint: obj.complaint || '', created_at: obj.createdAt, last_request_at: obj.lastRequestAt, last_request_status: obj.lastRequestStatus };
@@ -972,7 +1050,7 @@ function toRequestRow(obj) {
   return { id: obj.id, business_id: obj.businessId, customer_id: obj.customerId, customer_name: obj.customerName, phone: obj.phone, message: obj.message, status: obj.status, reaction: obj.reaction || null, feedback_text: obj.feedbackText || null, created_at: obj.createdAt, sent_at: obj.sentAt, opened_at: obj.openedAt, reviewed_at: obj.reviewedAt };
 }
 function toReviewRow(obj) {
-  return { id: obj.id, business_id: obj.businessId, customer_id: obj.customerId, customer_name: obj.customerName, rating: obj.rating, text: obj.text || '', source: obj.source || 'internal', google_review_id: obj.googleReviewId || null, request_id: obj.requestId, sent_at: obj.sentAt, created_at: obj.createdAt };
+  return { id: obj.id, business_id: obj.businessId, customer_id: obj.customerId, customer_name: obj.customerName, rating: obj.rating, text: obj.text || '', source: obj.source || 'internal', google_review_id: obj.googleReviewId || null, request_id: obj.requestId, sent_at: obj.sentAt, created_at: obj.createdAt, is_read: !!obj.isRead, ai_flag: obj.aiFlag || null, ai_issue_id: obj.aiIssueId || null };
 }
 function toFeedbackRow(obj) {
   return { id: obj.id, business_id: obj.businessId, customer_id: obj.customerId, customer_name: obj.customerName, phone: obj.phone, complaint: obj.complaint || '', google_review_id: obj.googleReviewId || null, created_at: obj.createdAt, submitted_at: obj.submittedAt || null };
