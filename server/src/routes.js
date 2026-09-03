@@ -448,16 +448,58 @@ router.get('/reviews/list', auth, async (req, res) => {
   res.json({ positive, negative });
 });
 
+async function getValidGoogleAccessToken(business) {
+  if (!business.googleAccessToken) return null;
+  const expiresAt = business.googleTokenExpiresAt ? new Date(business.googleTokenExpiresAt).getTime() : 0;
+  if (expiresAt > Date.now() + 60000) return business.googleAccessToken;
+  const refreshToken = business.googleRefreshToken;
+  const clientId = process.env.GOOGLE_CLIENT_ID;
+  const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+  if (!refreshToken || !clientId || !clientSecret) return business.googleAccessToken;
+  try {
+    const r = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ client_id: clientId, client_secret: clientSecret, refresh_token: refreshToken, grant_type: 'refresh_token' }),
+    });
+    const d = await r.json();
+    if (!r.ok || !d.access_token) return business.googleAccessToken;
+    const newExpiresAt = new Date(Date.now() + (d.expires_in || 3600) * 1000).toISOString();
+    const db = getDb();
+    await db.from('businesses').update({ google_access_token: d.access_token, google_token_expires_at: newExpiresAt }).eq('id', business.id);
+    business.googleAccessToken = d.access_token;
+    business.googleTokenExpiresAt = newExpiresAt;
+    return d.access_token;
+  } catch { return business.googleAccessToken; }
+}
+
 router.post('/reviews/google/sync', auth, async (req, res) => {
   const db = getDb();
   const biz = req.business;
+  // Prefer per-business OAuth token; fallback to legacy Places API key only if OAuth not connected
+  const hasOAuth = !!biz.googleConnected && !!biz.googleAccessToken;
   const apiKey = process.env.GOOGLE_PLACES_API_KEY;
-  if (!apiKey || !biz.placeId) {
-    return res.json({ connected: false, message: !apiKey ? 'Google Places API key is not configured on the server yet.' : 'No Google Place ID is set for this business yet — add it in Settings.' });
+  if (!biz.placeId) {
+    return res.json({ connected: false, message: 'No Google Place ID is set for this business yet — add it in Settings.' });
+  }
+  if (!hasOAuth && !apiKey) {
+    return res.json({ connected: false, message: hasOAuth ? 'Google account connected but token missing — reconnect in onboarding.' : 'Google not connected — complete onboarding to connect your Business Profile.' });
   }
   try {
-    const url = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${encodeURIComponent(biz.placeId)}&fields=review,rating,user_ratings_total&key=${apiKey}`;
-    const resp = await fetch(url);
+    let accessToken = null;
+    if (hasOAuth) accessToken = await getValidGoogleAccessToken(biz);
+    let url;
+    let headers = {};
+    if (hasOAuth && accessToken) {
+      // Use OAuth token to call Places Details (still works with Bearer, key param optional)
+      url = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${encodeURIComponent(biz.placeId)}&fields=review,rating,user_ratings_total`;
+      headers = { Authorization: `Bearer ${accessToken}` };
+      // also include API key if available as fallback param
+      if (apiKey) url += `&key=${apiKey}`;
+    } else {
+      url = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${encodeURIComponent(biz.placeId)}&fields=review,rating,user_ratings_total&key=${apiKey}`;
+    }
+    const resp = await fetch(url, { headers });
     const data = await resp.json();
     if (data.status !== 'OK') return res.json({ connected: false, message: `Google API error: ${data.status}` });
     const googleReviews = data.result?.reviews || [];
@@ -568,7 +610,7 @@ router.get('/activity', auth, async (req, res) => {
 
 router.get('/settings', auth, (req, res) => {
   const b = req.business;
-  res.json({ businessName: b.name, googleReviewLink: b.googleReviewLink, feedbackLink: b.feedbackLink, messageTemplate: b.messageTemplate, delaySeconds: b.delaySeconds, demoMode: b.demoMode, reviewsReceived: b.reviewsReceived || 0, placeId: b.placeId || '', whatsappStatus: b.whatsapp?.status || 'not_connected', whatsappBsp: b.whatsapp?.bsp || '' });
+  res.json({ businessName: b.name, googleReviewLink: b.googleReviewLink, feedbackLink: b.feedbackLink, messageTemplate: b.messageTemplate, delaySeconds: b.delaySeconds, demoMode: b.demoMode, reviewsReceived: b.reviewsReceived || 0, placeId: b.placeId || '', whatsappStatus: b.whatsapp?.status || 'not_connected', whatsappBsp: b.whatsapp?.bsp || '', onboardingCompleted: !!b.onboardingCompleted, isDemo: !!b.isDemo, googleConnected: !!b.googleConnected });
 });
 
 router.put('/settings', auth, async (req, res) => {
@@ -592,6 +634,126 @@ router.get('/message-preview', auth, (req, res) => {
   const b = req.business;
   const message = renderTemplate(b.messageTemplate, { customerName: 'Rahul Sharma', businessName: b.name, reviewLink: b.googleReviewLink });
   res.json({ message, effectiveDelay: effectiveDelay(b) });
+});
+
+// --- Onboarding gate ---
+router.get('/onboarding/status', auth, async (req, res) => {
+  const b = req.business;
+  res.json({
+    onboardingCompleted: !!b.onboardingCompleted,
+    googleConnected: !!b.googleConnected,
+    googleAccountEmail: b.googleAccountEmail || null,
+    whatsappConnected: b.whatsapp?.status === 'connected',
+    whatsappBsp: b.whatsapp?.bsp || null,
+  });
+});
+
+router.post('/onboarding/whatsapp', auth, async (req, res) => {
+  const db = getDb();
+  const { apiKey, phoneNumberId } = req.body || {};
+  if (!apiKey || !String(apiKey).trim()) return res.status(400).json({ error: 'AiSensy API key is required' });
+  await db.from('businesses').update({
+    whatsapp_api_key: String(apiKey).trim(),
+    whatsapp_bsp: 'AiSensy',
+    whatsapp_phone_number_id: phoneNumberId ? String(phoneNumberId).trim() : '',
+    whatsapp_status: 'connected',
+  }).eq('id', req.business.id);
+  const updated = await getBusiness(req.business.id);
+  // auto-complete if google also connected
+  if (updated.googleConnected && updated.whatsapp.status === 'connected') {
+    await db.from('businesses').update({ onboarding_completed: true }).eq('id', req.business.id);
+  }
+  res.json({ ok: true, whatsappConnected: true });
+});
+
+router.get('/auth/google', async (req, res) => {
+  // Allow token via query ?token= for browser redirects where header isn't sent, fallback to header
+  let businessId = null;
+  const qToken = req.query.token;
+  const header = req.headers.authorization || '';
+  const hToken = header.startsWith('Bearer ') ? header.slice(7) : '';
+  const token = qToken || hToken;
+  if (token) {
+    const db = getDb();
+    const { data: sess } = await db.from('sessions').select('*').eq('token', token).single();
+    if (sess) businessId = sess.business_id;
+  }
+  if (!businessId && req.business) businessId = req.business.id;
+  if (!businessId) return res.status(401).json({ error: 'Unauthorized — login first' });
+  const clientId = process.env.GOOGLE_CLIENT_ID;
+  const redirectUri = process.env.GOOGLE_REDIRECT_URI;
+  if (!clientId || !redirectUri) {
+    return res.status(500).json({ error: 'Google OAuth not configured. Set GOOGLE_CLIENT_ID and GOOGLE_REDIRECT_URI env vars.' });
+  }
+  const state = businessId;
+  const scope = encodeURIComponent('https://www.googleapis.com/auth/business.manage https://www.googleapis.com/auth/userinfo.email');
+  const url = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=${scope}&access_type=offline&prompt=consent&state=${encodeURIComponent(state)}`;
+  res.redirect(url);
+});
+
+router.get('/auth/google/callback', async (req, res) => {
+  const { code, state } = req.query;
+  if (!code || !state) return res.status(400).send('Missing code or state');
+  const clientId = process.env.GOOGLE_CLIENT_ID;
+  const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+  const redirectUri = process.env.GOOGLE_REDIRECT_URI;
+  if (!clientId || !clientSecret || !redirectUri) return res.status(500).send('Google OAuth not configured');
+  try {
+    const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        code: String(code),
+        client_id: clientId,
+        client_secret: clientSecret,
+        redirect_uri: redirectUri,
+        grant_type: 'authorization_code',
+      }),
+    });
+    const tokenData = await tokenRes.json();
+    if (!tokenRes.ok) return res.status(400).send('Token exchange failed: ' + JSON.stringify(tokenData));
+    const accessToken = tokenData.access_token;
+    const refreshToken = tokenData.refresh_token;
+    const expiresAt = new Date(Date.now() + (tokenData.expires_in || 3600) * 1000).toISOString();
+
+    let accountEmail = null;
+    try {
+      const infoRes = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', { headers: { Authorization: `Bearer ${accessToken}` } });
+      const info = await infoRes.json();
+      accountEmail = info.email || null;
+    } catch {}
+
+    const db = getDb();
+    const businessId = String(state);
+    await db.from('businesses').update({
+      google_access_token: accessToken,
+      google_refresh_token: refreshToken || null,
+      google_token_expires_at: expiresAt,
+      google_connected: true,
+      google_account_email: accountEmail,
+    }).eq('id', businessId);
+
+    const biz = await getBusiness(businessId);
+    if (biz && biz.whatsapp.status === 'connected') {
+      await db.from('businesses').update({ onboarding_completed: true }).eq('id', businessId);
+    }
+
+    const frontendBase = process.env.FRONTEND_URL || req.headers.referer || '/onboarding';
+    // redirect to frontend onboarding with success flag
+    const redirectTo = (frontendBase.includes('localhost') ? 'http://localhost:4000/onboarding?google=success' : '/onboarding?google=success');
+    res.redirect(redirectTo);
+  } catch (e) {
+    res.status(500).send('OAuth callback failed: ' + e.message);
+  }
+});
+
+router.post('/onboarding/complete', auth, async (req, res) => {
+  const b = req.business;
+  if (!b.googleConnected) return res.status(400).json({ error: 'Google not connected yet' });
+  if (b.whatsapp?.status !== 'connected') return res.status(400).json({ error: 'WhatsApp not connected yet' });
+  const db = getDb();
+  await db.from('businesses').update({ onboarding_completed: true }).eq('id', b.id);
+  res.json({ ok: true, onboardingCompleted: true });
 });
 
 router.post('/reviews/increment', auth, async (req, res) => {
@@ -639,6 +801,7 @@ router.post('/admin/businesses', adminAuth, async (req, res) => {
     google_review_link: googleReviewLink ? String(googleReviewLink).trim() : '', feedback_link: '', address: '', phone: '', description: '',
     message_template: defaultTemplate, delay_seconds: 7200, demo_mode: false, subscription_status: 'trial', created_at: new Date().toISOString(),
     reviews_received: 0, place_id: '', whatsapp_bsp: '', whatsapp_api_key: '', whatsapp_phone_number_id: '', whatsapp_status: 'not_connected',
+    google_access_token: null, google_refresh_token: null, google_token_expires_at: null, google_connected: false, google_account_email: null, onboarding_completed: false,
   };
   await db.from('businesses').insert(business);
   res.json({ business: { id: business.id, name: business.name, ownerEmail: business.owner_email } });
@@ -712,7 +875,7 @@ router.post('/reset-db', auth, async (req, res) => {
 });
 
 function toBusinessRow(obj) {
-  return { id: obj.id, name: obj.name, owner_email: obj.ownerEmail, password: obj.passwordHash, is_demo: obj.isDemo, google_review_link: obj.googleReviewLink, feedback_link: obj.feedbackLink, address: obj.address, phone: obj.phone, description: obj.description, message_template: obj.messageTemplate, delay_seconds: obj.delaySeconds, demo_mode: obj.demoMode, subscription_status: obj.subscriptionStatus, created_at: obj.createdAt, place_id: obj.placeId, whatsapp_bsp: obj.whatsapp?.bsp || '', whatsapp_api_key: obj.whatsapp?.apiKey || '', whatsapp_phone_number_id: obj.whatsapp?.phoneNumberId || '', whatsapp_status: obj.whatsapp?.status || 'not_connected', reviews_received: obj.reviewsReceived || 0 };
+  return { id: obj.id, name: obj.name, owner_email: obj.ownerEmail, password: obj.passwordHash, is_demo: obj.isDemo, google_review_link: obj.googleReviewLink, feedback_link: obj.feedbackLink, address: obj.address, phone: obj.phone, description: obj.description, message_template: obj.messageTemplate, delay_seconds: obj.delaySeconds, demo_mode: obj.demoMode, subscription_status: obj.subscriptionStatus, created_at: obj.createdAt, place_id: obj.placeId, whatsapp_bsp: obj.whatsapp?.bsp || '', whatsapp_api_key: obj.whatsapp?.apiKey || '', whatsapp_phone_number_id: obj.whatsapp?.phoneNumberId || '', whatsapp_status: obj.whatsapp?.status || 'not_connected', reviews_received: obj.reviewsReceived || 0, google_access_token: obj.googleAccessToken || null, google_refresh_token: obj.googleRefreshToken || null, google_token_expires_at: obj.googleTokenExpiresAt || null, google_connected: !!obj.googleConnected, google_account_email: obj.googleAccountEmail || null, onboarding_completed: !!obj.onboardingCompleted };
 }
 function toCustomerRow(obj) {
   return { id: obj.id, business_id: obj.businessId, name: obj.name, phone: obj.phone, custom_message: obj.customMessage || '', stage: obj.stage || 'to_send', sentiment: obj.sentiment || null, complaint: obj.complaint || '', created_at: obj.createdAt, last_request_at: obj.lastRequestAt, last_request_status: obj.lastRequestStatus };

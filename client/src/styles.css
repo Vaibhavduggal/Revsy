@@ -14,7 +14,8 @@
   --bg-soft: #f7f8fa;
   --ok: #16a34a;
   --ok-soft: #e8f6ee;
-  --warn: #d97706;
+  --warn: #dc2626;
+  --warn-soft: #fef2f2;
   --radius: 14px;
   --shadow: 0 1px 2px rgba(16, 24, 40, 0.04), 0 8px 24px rgba(16, 24, 40, 0.06);
   --shadow-lg: 0 12px 40px rgba(16, 24, 40, 0.12);

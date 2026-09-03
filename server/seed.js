@@ -70,6 +70,7 @@ async function seed() {
     subscription_status: 'trial', created_at: new Date(now - 240 * DAY).toISOString(),
     place_id: '', whatsapp_bsp: '', whatsapp_api_key: '', whatsapp_phone_number_id: '',
     whatsapp_status: 'not_connected', reviews_received: 0,
+    google_access_token: null, google_refresh_token: null, google_token_expires_at: null, google_connected: false, google_account_email: null, onboarding_completed: true,
   };
   await db.from('businesses').insert(business);
 

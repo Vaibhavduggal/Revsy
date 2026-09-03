@@ -78,6 +78,12 @@ function mapBusiness(row) {
       status: row.whatsapp_status || 'not_connected',
     },
     reviewsReceived: row.reviews_received || 0,
+    googleAccessToken: row.google_access_token || null,
+    googleRefreshToken: row.google_refresh_token || null,
+    googleTokenExpiresAt: row.google_token_expires_at || null,
+    googleConnected: !!row.google_connected,
+    googleAccountEmail: row.google_account_email || null,
+    onboardingCompleted: !!row.onboarding_completed,
   };
 }
 
@@ -205,6 +211,12 @@ function toBusinessRow(obj) {
     name: obj.name,
     owner_email: obj.ownerEmail,
     password: obj.passwordHash,
+    google_access_token: obj.googleAccessToken || null,
+    google_refresh_token: obj.googleRefreshToken || null,
+    google_token_expires_at: obj.googleTokenExpiresAt || null,
+    google_connected: !!obj.googleConnected,
+    google_account_email: obj.googleAccountEmail || null,
+    onboarding_completed: !!obj.onboardingCompleted,
     is_demo: obj.isDemo,
     google_review_link: obj.googleReviewLink,
     feedback_link: obj.feedbackLink,

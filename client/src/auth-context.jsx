@@ -8,13 +8,15 @@ export function AuthProvider({ children }) {
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    // Session is the business id we received at login.
     if (getToken()) {
-      api.settings()
-        .then((s) => setBusiness({
+      Promise.all([api.settings(), api.onboardingStatus().catch(() => ({ onboardingCompleted: true }))])
+        .then(([s, o]) => setBusiness({
           id: getToken(),
           name: s.businessName,
           ...s,
+          onboardingCompleted: o.onboardingCompleted,
+          googleConnected: o.googleConnected,
+          isDemo: s.isDemo || false,
         }))
         .catch(() => { setToken(null); })
         .finally(() => setReady(true));
