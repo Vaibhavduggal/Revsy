@@ -1,6 +1,11 @@
-import 'dotenv/config';
+import dotenv from 'dotenv';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { createClient } from '@supabase/supabase-js';
 import crypto from 'crypto';
+
+const __seedDir = path.dirname(fileURLToPath(import.meta.url));
+dotenv.config({ path: path.join(__seedDir, '.env') });
 
 const url = process.env.SUPABASE_URL;
 const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -56,7 +61,7 @@ async function seed() {
 
   console.log('Seeding business...');
   const business = {
-    id: 'biz_1', name: 'Smash Bros', owner_email: 'owner@business.com', password_hash: hashPassword('demo123'),
+    id: 'biz_1', name: 'Smash Bros', owner_email: 'owner@business.com', password: hashPassword('demo123'),
     is_demo: true, google_review_link: 'https://g.page/smash-bros-ludhiana/review',
     feedback_link: 'https://smashbros.example.com/feedback/private',
     address: 'SCF 29 F, Bhai Randhir Singh Nagar, Ludhiana, Punjab 141012',
@@ -88,7 +93,8 @@ async function seed() {
       created_at: createdAt, last_request_at: null, last_request_status: null,
     });
   }
-  for (const c of customers) await db.from('customers').insert(c);
+  const { error: custErr } = await db.from('customers').insert(customers);
+  if (custErr) { console.error('customers insert', custErr); throw custErr; }
 
   console.log('Seeding requests and reviews...');
   const requests = [];
@@ -120,20 +126,22 @@ async function seed() {
       reviews.push({ id: `rev_${i + 1}`, business_id: business.id, customer_id: cust.id, customer_name: cust.name, rating: 4 + (rng() < 0.5 ? 1 : 0), text: '', source: 'internal', google_review_id: null, request_id: id, sent_at: createdAt.toISOString(), created_at: reviewedAt });
     }
   }
-  for (const r of requests) await db.from('requests').insert(r);
+  const { error: reqErr } = await db.from('requests').insert(requests);
+  if (reqErr) { console.error('requests insert', reqErr); throw reqErr; }
+  if (reviews.length) { const { error: revErr } = await db.from('reviews').insert(reviews); if (revErr) { console.error('reviews', revErr); throw revErr; } }
 
   for (const c of customers) {
     if (c.stage === 'negative') {
       feedback.push({ id: `fb_${c.id}`, business_id: business.id, customer_id: c.id, customer_name: c.name, phone: c.phone, complaint: c.complaint, google_review_id: null, created_at: c.created_at, submitted_at: null });
     }
   }
-  for (const f of feedback) await db.from('feedback').insert(f);
+  if (feedback.length) { const { error: fbErr } = await db.from('feedback').insert(feedback); if (fbErr) { console.error('feedback', fbErr); throw fbErr; } }
 
   const sortedReqs = [...requests].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
   for (const r of sortedReqs.slice(0, 50)) {
     activities.push({ id: `act_${r.id}`, business_id: business.id, type: 'message_sent', customer_name: r.customer_name, phone: r.phone, message: r.message, status: r.status, created_at: r.created_at });
   }
-  for (const a of activities) await db.from('activities').insert(a);
+  if (activities.length) { const { error: actErr } = await db.from('activities').insert(activities); if (actErr) { console.error('activities', actErr); throw actErr; } }
 
   await db.from('businesses').update({ reviews_received: reviewsReceived }).eq('id', business.id);
 

@@ -128,7 +128,7 @@ router.post('/login', async (req, res) => {
   const { email, password } = req.body || {};
   const db = getDb();
   const { data: bizData } = await db.from('businesses').select('*').eq('owner_email', email).single();
-  if (!bizData || !verifyPassword(password || '', bizData.password_hash)) {
+  if (!bizData || !verifyPassword(password || '', bizData.password)) {
     return res.status(401).json({ error: 'Invalid email or password' });
   }
   const business = mapBusiness(bizData);
@@ -635,7 +635,7 @@ router.post('/admin/businesses', adminAuth, async (req, res) => {
   const { data: existing } = await db.from('businesses').select('*').eq('owner_email', ownerEmail).single();
   if (existing) return res.status(409).json({ error: 'A business with that owner email already exists' });
   const business = {
-    id: newId('biz'), name: String(name).trim(), owner_email: String(ownerEmail).trim(), password_hash: hashPassword(password), is_demo: false,
+    id: newId('biz'), name: String(name).trim(), owner_email: String(ownerEmail).trim(), password: hashPassword(password), is_demo: false,
     google_review_link: googleReviewLink ? String(googleReviewLink).trim() : '', feedback_link: '', address: '', phone: '', description: '',
     message_template: defaultTemplate, delay_seconds: 7200, demo_mode: false, subscription_status: 'trial', created_at: new Date().toISOString(),
     reviews_received: 0, place_id: '', whatsapp_bsp: '', whatsapp_api_key: '', whatsapp_phone_number_id: '', whatsapp_status: 'not_connected',
@@ -712,7 +712,7 @@ router.post('/reset-db', auth, async (req, res) => {
 });
 
 function toBusinessRow(obj) {
-  return { id: obj.id, name: obj.name, owner_email: obj.ownerEmail, password_hash: obj.passwordHash, is_demo: obj.isDemo, google_review_link: obj.googleReviewLink, feedback_link: obj.feedbackLink, address: obj.address, phone: obj.phone, description: obj.description, message_template: obj.messageTemplate, delay_seconds: obj.delaySeconds, demo_mode: obj.demoMode, subscription_status: obj.subscriptionStatus, created_at: obj.createdAt, place_id: obj.placeId, whatsapp_bsp: obj.whatsapp?.bsp || '', whatsapp_api_key: obj.whatsapp?.apiKey || '', whatsapp_phone_number_id: obj.whatsapp?.phoneNumberId || '', whatsapp_status: obj.whatsapp?.status || 'not_connected', reviews_received: obj.reviewsReceived || 0 };
+  return { id: obj.id, name: obj.name, owner_email: obj.ownerEmail, password: obj.passwordHash, is_demo: obj.isDemo, google_review_link: obj.googleReviewLink, feedback_link: obj.feedbackLink, address: obj.address, phone: obj.phone, description: obj.description, message_template: obj.messageTemplate, delay_seconds: obj.delaySeconds, demo_mode: obj.demoMode, subscription_status: obj.subscriptionStatus, created_at: obj.createdAt, place_id: obj.placeId, whatsapp_bsp: obj.whatsapp?.bsp || '', whatsapp_api_key: obj.whatsapp?.apiKey || '', whatsapp_phone_number_id: obj.whatsapp?.phoneNumberId || '', whatsapp_status: obj.whatsapp?.status || 'not_connected', reviews_received: obj.reviewsReceived || 0 };
 }
 function toCustomerRow(obj) {
   return { id: obj.id, business_id: obj.businessId, name: obj.name, phone: obj.phone, custom_message: obj.customMessage || '', stage: obj.stage || 'to_send', sentiment: obj.sentiment || null, complaint: obj.complaint || '', created_at: obj.createdAt, last_request_at: obj.lastRequestAt, last_request_status: obj.lastRequestStatus };

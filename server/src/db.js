@@ -58,7 +58,7 @@ function mapBusiness(row) {
     id: row.id,
     name: row.name,
     ownerEmail: row.owner_email,
-    passwordHash: row.password_hash,
+    passwordHash: row.password,
     isDemo: row.is_demo,
     googleReviewLink: row.google_review_link,
     feedbackLink: row.feedback_link,
@@ -204,7 +204,7 @@ function toBusinessRow(obj) {
     id: obj.id,
     name: obj.name,
     owner_email: obj.ownerEmail,
-    password_hash: obj.passwordHash,
+    password: obj.passwordHash,
     is_demo: obj.isDemo,
     google_review_link: obj.googleReviewLink,
     feedback_link: obj.feedbackLink,
@@ -516,6 +516,6 @@ function mulberry32(seed) {
 
 function pad(n, w) { return String(n).padStart(w, '0'); }
 
+export const defaultTemplate = DEFAULT_TEMPLATE;
 export { mapBusiness, mapCustomer, mapRequest, mapReview, mapFeedback, mapPendingSend, mapActivity, mapSession, mapAdminSession, mapAdmin };
 export { toBusinessRow, toCustomerRow, toRequestRow, toReviewRow, toFeedbackRow, toPendingSendRow, toActivityRow };
-export { defaultTemplate };
