@@ -48,6 +48,37 @@ function AddClientModal({ onClose, onAdded }) {
   );
 }
 
+function InviteModal({ onClose, onAdded }) {
+  const { show, node } = useToast();
+  const [email, setEmail] = useState('');
+  const [businessName, setBusinessName] = useState('');
+  const [busy, setBusy] = useState(false);
+  const submit = async (e) => {
+    e.preventDefault();
+    if (!email.trim()) return;
+    setBusy(true);
+    try {
+      await adminApi.invite(email.trim(), businessName.trim());
+      show(`Invite sent to ${email.trim()}`);
+      onAdded();
+      onClose();
+    } catch (err) { show(err.message); } finally { setBusy(false); }
+  };
+  return (
+    <Modal title="Invite by email" sub="Sends an invite — they will create their own login and be pre-approved." onClose={onClose}>
+      <form onSubmit={submit}>
+        <div className="field"><label>Email *</label><input className="input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="owner@theirbusiness.com" autoFocus required /></div>
+        <div className="field"><label>Business name (optional)</label><input className="input" value={businessName} onChange={(e) => setBusinessName(e.target.value)} placeholder="e.g. Punjabi Tadka" /></div>
+        <div className="modal-actions">
+          <button type="button" className="btn secondary" onClick={onClose}>Cancel</button>
+          <button type="submit" className="btn" disabled={busy}>{busy ? 'Sending…' : 'Send invite'}</button>
+        </div>
+      </form>
+      {node}
+    </Modal>
+  );
+}
+
 function WhatsappModal({ biz, onClose, onSaved }) {
   const { show, node } = useToast();
   const [form, setForm] = useState({ bsp: biz.whatsapp?.bsp || 'RichAutomate', apiKey: '', phoneNumberId: biz.whatsapp?.phoneNumberId || '' });
@@ -126,12 +157,17 @@ export default function Admin() {
   const { logout } = useAdminAuth();
   const navigate = useNavigate();
   const { show, node } = useToast();
+  const [tab, setTab] = useState('clients');
   const [list, setList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
+  const [inviting, setInviting] = useState(false);
   const [waTarget, setWaTarget] = useState(null);
   const [googleTarget, setGoogleTarget] = useState(null);
   const [removing, setRemoving] = useState(null);
+  const [invites, setInvites] = useState([]);
+  const [requests, setRequests] = useState([]);
+  const [reqLoading, setReqLoading] = useState(false);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -144,7 +180,17 @@ export default function Admin() {
       .finally(() => setLoading(false));
   }, [show, navigate]);
 
+  const loadInvites = useCallback(() => {
+    adminApi.invites().then((r) => setInvites(r.invites)).catch(() => {});
+  }, []);
+
+  const loadRequests = useCallback(() => {
+    setReqLoading(true);
+    adminApi.requests().then((r) => setRequests(r.requests)).catch((e) => show(e.message)).finally(() => setReqLoading(false));
+  }, [show]);
+
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { if (tab === 'invites') loadInvites(); if (tab === 'requests') loadRequests(); }, [tab, loadInvites, loadRequests]);
 
   const remove = async (biz) => {
     if (!window.confirm(`Remove ${biz.name} and all of their data? This can't be undone.`)) return;
@@ -154,6 +200,14 @@ export default function Admin() {
       show(`${biz.name} removed`);
       load();
     } catch (err) { show(err.message); } finally { setRemoving(null); }
+  };
+
+  const approve = async (id) => {
+    try { await adminApi.approve(id); show('Approved'); loadRequests(); load(); } catch (e) { show(e.message); }
+  };
+  const reject = async (id) => {
+    if (!window.confirm('Reject this business? They will see a not-approved message.')) return;
+    try { await adminApi.reject(id); show('Rejected'); loadRequests(); load(); } catch (e) { show(e.message); }
   };
 
   return (
@@ -171,54 +225,118 @@ export default function Admin() {
             <h1>Clients</h1>
             <div className="sub">Add clients, onboard their WhatsApp Business API, and connect Google Reviews.</div>
           </div>
-          <button className="btn" onClick={() => setAdding(true)}><Icon.plus width={16} height={16} /> Add client</button>
+          <div className="flex" style={{ gap: 10 }}>
+            <button className="btn secondary" onClick={() => setInviting(true)}><Icon.plus width={16} height={16} /> Invite by email</button>
+            <button className="btn" onClick={() => setAdding(true)}><Icon.plus width={16} height={16} /> Add client</button>
+          </div>
         </div>
 
-        <div className="card mb">
-          {loading ? (
-            <div className="empty">Loading…</div>
-          ) : (
-            <table className="table">
-              <thead>
-                <tr><th>Business</th><th>Owner email</th><th>Status</th><th>WhatsApp</th><th>Google</th><th>Requests</th><th>Customers</th><th>Created</th><th></th></tr>
-              </thead>
-              <tbody>
-                {list.map((b) => (
-                  <tr key={b.id}>
-                    <td><b>{b.name}</b>{b.isDemo && <span className="badge sent sm" style={{ marginLeft: 6 }}>Demo</span>}</td>
-                    <td className="muted">{b.ownerEmail}</td>
-                    <td><span className={`badge ${STATUS[b.subscriptionStatus]?.cls || 'sent'}`}>{STATUS[b.subscriptionStatus]?.label || b.subscriptionStatus}</span></td>
-                    <td>
-                      <button className="btn ghost sm" onClick={() => setWaTarget(b)}>
-                        {b.whatsapp?.status === 'connected'
-                          ? <span className="badge reviewed sm">{b.whatsapp.bsp || 'Connected'}</span>
-                          : <span className="badge sent sm">Not connected</span>}
-                      </button>
-                    </td>
-                    <td>
-                      <button className="btn ghost sm" onClick={() => setGoogleTarget(b)}>
-                        {b.placeId ? <span className="badge reviewed sm">Connected</span> : <span className="badge sent sm">Not connected</span>}
-                      </button>
-                    </td>
-                    <td>{b.requestsSent}</td>
-                    <td>{b.customersCount}</td>
-                    <td className="muted">{fmtDate(b.createdAt)}</td>
-                    <td>
-                      {!b.isDemo && (
-                        <button className="btn ghost sm" disabled={removing === b.id} onClick={() => remove(b)} title="Remove client">
-                          <Icon.trash width={15} height={15} />
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
+        <div className="flex" style={{ gap: 8, marginBottom: 16 }}>
+          <button className={`btn sm ${tab === 'clients' ? '' : 'secondary'}`} onClick={() => setTab('clients')}>Clients ({list.length})</button>
+          <button className={`btn sm ${tab === 'requests' ? '' : 'secondary'}`} onClick={() => setTab('requests')}>Requests ({requests.length})</button>
+          <button className={`btn sm ${tab === 'invites' ? '' : 'secondary'}`} onClick={() => setTab('invites')}>Invites ({invites.length})</button>
         </div>
+
+        {tab === 'clients' && (
+          <div className="card mb">
+            {loading ? (
+              <div className="empty">Loading…</div>
+            ) : (
+              <table className="table">
+                <thead>
+                  <tr><th>Business</th><th>Owner email</th><th>Status</th><th>WhatsApp</th><th>Google</th><th>Requests</th><th>Customers</th><th>Created</th><th></th></tr>
+                </thead>
+                <tbody>
+                  {list.map((b) => (
+                    <tr key={b.id}>
+                      <td><b>{b.name}</b>{b.isDemo && <span className="badge sent sm" style={{ marginLeft: 6 }}>Demo</span>}</td>
+                      <td className="muted">{b.ownerEmail}</td>
+                      <td><span className={`badge ${STATUS[b.subscriptionStatus]?.cls || 'sent'}`}>{STATUS[b.subscriptionStatus]?.label || b.subscriptionStatus}</span></td>
+                      <td>
+                        <button className="btn ghost sm" onClick={() => setWaTarget(b)}>
+                          {b.whatsapp?.status === 'connected'
+                            ? <span className="badge reviewed sm">{b.whatsapp.bsp || 'Connected'}</span>
+                            : <span className="badge sent sm">Not connected</span>}
+                        </button>
+                      </td>
+                      <td>
+                        <button className="btn ghost sm" onClick={() => setGoogleTarget(b)}>
+                          {b.placeId ? <span className="badge reviewed sm">Connected</span> : <span className="badge sent sm">Not connected</span>}
+                        </button>
+                      </td>
+                      <td>{b.requestsSent}</td>
+                      <td>{b.customersCount}</td>
+                      <td className="muted">{fmtDate(b.createdAt)}</td>
+                      <td>
+                        {!b.isDemo && (
+                          <button className="btn ghost sm" disabled={removing === b.id} onClick={() => remove(b)} title="Remove client">
+                            <Icon.trash width={15} height={15} />
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        )}
+
+        {tab === 'requests' && (
+          <div className="card mb">
+            <h3>Pending approval ({requests.length})</h3>
+            <div className="sub">Businesses that signed up and connected Google — approve to let them continue to WhatsApp.</div>
+            <div className="spacer" />
+            {reqLoading ? <div className="empty">Loading…</div> : requests.length === 0 ? <div className="empty">No pending requests.</div> : (
+              <table className="table">
+                <thead><tr><th>Business</th><th>Owner email</th><th>Google</th><th>Created</th><th></th></tr></thead>
+                <tbody>
+                  {requests.map((r) => (
+                    <tr key={r.id}>
+                      <td><b>{r.name}</b></td>
+                      <td className="muted">{r.ownerEmail}</td>
+                      <td>{r.googleConnected ? <span className="badge reviewed sm">{r.googleAccountEmail || 'Connected'}</span> : <span className="badge sent sm">Not connected</span>}</td>
+                      <td className="muted">{fmtDate(r.createdAt)}</td>
+                      <td>
+                        <div className="flex" style={{ gap: 6 }}>
+                          <button className="btn green sm" onClick={() => approve(r.id)}>Accept</button>
+                          <button className="btn secondary sm" onClick={() => reject(r.id)}>Reject</button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        )}
+
+        {tab === 'invites' && (
+          <div className="card mb">
+            <h3>Invited emails ({invites.length})</h3>
+            <div className="sub">Pre-approved invites — they skip the waiting screen after Google connect.</div>
+            <div className="spacer" />
+            {invites.length === 0 ? <div className="empty">No invites yet.</div> : (
+              <table className="table">
+                <thead><tr><th>Email</th><th>Business name</th><th>Invited</th><th>Used</th></tr></thead>
+                <tbody>
+                  {invites.map((iv) => (
+                    <tr key={iv.id}>
+                      <td><b>{iv.email}</b></td>
+                      <td className="muted">{iv.business_name || '—'}</td>
+                      <td className="muted">{fmtDate(iv.invited_at)}</td>
+                      <td>{iv.used ? <span className="badge reviewed sm">Used</span> : <span className="badge sent sm">Pending</span>}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        )}
       </div>
 
       {adding && <AddClientModal onClose={() => setAdding(false)} onAdded={load} />}
+      {inviting && <InviteModal onClose={() => setInviting(false)} onAdded={() => { loadInvites(); load(); }} />}
       {waTarget && <WhatsappModal biz={waTarget} onClose={() => setWaTarget(null)} onSaved={load} />}
       {googleTarget && <GoogleModal biz={googleTarget} onClose={() => setGoogleTarget(null)} onSaved={load} />}
       {node}

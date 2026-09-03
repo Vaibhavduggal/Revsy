@@ -84,6 +84,10 @@ function mapBusiness(row) {
     googleConnected: !!row.google_connected,
     googleAccountEmail: row.google_account_email || null,
     onboardingCompleted: !!row.onboarding_completed,
+    approvalStatus: row.approval_status || 'pending_approval',
+    preApproved: !!row.pre_approved,
+    approvedAt: row.approved_at || null,
+    rejectedAt: row.rejected_at || null,
   };
 }
 
@@ -133,6 +137,21 @@ function mapReview(row) {
     googleReviewId: row.google_review_id || null,
     requestId: row.request_id,
     sentAt: row.sent_at,
+    createdAt: row.created_at,
+    isRead: !!row.is_read,
+  };
+}
+
+function mapReviewSummary(row) {
+  return {
+    id: row.id,
+    businessId: row.business_id,
+    periodStart: row.period_start,
+    periodEnd: row.period_end,
+    summaryText: row.summary_text,
+    areasOfImprovement: row.areas_of_improvement,
+    reviewCount: row.review_count,
+    isRead: !!row.is_read,
     createdAt: row.created_at,
   };
 }
@@ -217,6 +236,10 @@ function toBusinessRow(obj) {
     google_connected: !!obj.googleConnected,
     google_account_email: obj.googleAccountEmail || null,
     onboarding_completed: !!obj.onboardingCompleted,
+    approval_status: obj.approvalStatus || 'pending_approval',
+    pre_approved: !!obj.preApproved,
+    approved_at: obj.approvedAt || null,
+    rejected_at: obj.rejectedAt || null,
     is_demo: obj.isDemo,
     google_review_link: obj.googleReviewLink,
     feedback_link: obj.feedbackLink,
@@ -284,6 +307,21 @@ function toReviewRow(obj) {
     google_review_id: obj.googleReviewId || null,
     request_id: obj.requestId,
     sent_at: obj.sentAt,
+    created_at: obj.createdAt,
+    is_read: !!obj.isRead,
+  };
+}
+
+function toReviewSummaryRow(obj) {
+  return {
+    id: obj.id,
+    business_id: obj.businessId,
+    period_start: obj.periodStart,
+    period_end: obj.periodEnd,
+    summary_text: obj.summaryText,
+    areas_of_improvement: obj.areasOfImprovement,
+    review_count: obj.reviewCount,
+    is_read: !!obj.isRead,
     created_at: obj.createdAt,
   };
 }
@@ -529,5 +567,5 @@ function mulberry32(seed) {
 function pad(n, w) { return String(n).padStart(w, '0'); }
 
 export const defaultTemplate = DEFAULT_TEMPLATE;
-export { mapBusiness, mapCustomer, mapRequest, mapReview, mapFeedback, mapPendingSend, mapActivity, mapSession, mapAdminSession, mapAdmin };
-export { toBusinessRow, toCustomerRow, toRequestRow, toReviewRow, toFeedbackRow, toPendingSendRow, toActivityRow };
+export { mapBusiness, mapCustomer, mapRequest, mapReview, mapReviewSummary, mapFeedback, mapPendingSend, mapActivity, mapSession, mapAdminSession, mapAdmin };
+export { toBusinessRow, toCustomerRow, toRequestRow, toReviewRow, toReviewSummaryRow, toFeedbackRow, toPendingSendRow, toActivityRow };

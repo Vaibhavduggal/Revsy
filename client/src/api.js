@@ -38,6 +38,7 @@ const adminRequest = (method, path, body) => baseRequest(method, path, body, get
 export const api = {
   login: (email, password) => request('POST', '/login', { email, password }),
   demoLogin: () => request('POST', '/login/demo'),
+  signup: (email, password, businessName) => request('POST', '/signup', { email, password, businessName }),
   logout: () => request('POST', '/logout'),
   onboardingStatus: () => request('GET', '/onboarding/status'),
   onboardingWhatsapp: (apiKey, phoneNumberId) => request('POST', '/onboarding/whatsapp', { apiKey, phoneNumberId }),
@@ -71,6 +72,10 @@ export const api = {
   resetDb: () => request('POST', '/reset-db'),
   failedSends: () => request('GET', '/pending-sends/failed'),
   retrySend: (id) => request('POST', `/pending-sends/${id}/retry`),
+  reviewsAll: (page) => request('GET', `/reviews/all?page=${page||1}`),
+  markReviewRead: (id) => request('POST', `/reviews/${id}/read`),
+  summaries: () => request('GET', '/reviews/summaries'),
+  markSummaryRead: (id) => request('POST', `/reviews/summaries/${id}/read`),
 };
 
 export const adminApi = {
@@ -81,4 +86,9 @@ export const adminApi = {
   removeBusiness: (id) => adminRequest('DELETE', `/admin/businesses/${id}`),
   onboardWhatsapp: (id, payload) => adminRequest('PUT', `/admin/businesses/${id}/whatsapp`, payload),
   setGoogle: (id, payload) => adminRequest('PUT', `/admin/businesses/${id}/google`, payload),
+  invites: () => adminRequest('GET', '/admin/invites'),
+  invite: (email, businessName) => adminRequest('POST', '/admin/invites', { email, businessName }),
+  requests: () => adminRequest('GET', '/admin/requests'),
+  approve: (id) => adminRequest('POST', `/admin/businesses/${id}/approve`),
+  reject: (id) => adminRequest('POST', `/admin/businesses/${id}/reject`),
 };

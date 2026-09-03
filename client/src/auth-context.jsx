@@ -32,6 +32,13 @@ export function AuthProvider({ children }) {
     return data.business;
   }, []);
 
+  const signup = useCallback(async (email, password, businessName) => {
+    const data = await api.signup(email, password, businessName);
+    setToken(data.token);
+    setBusiness({ id: data.token, ...data.business });
+    return data.business;
+  }, []);
+
   const demoLogin = useCallback(async () => {
     const data = await api.demoLogin();
     setToken(data.token);
@@ -46,7 +53,7 @@ export function AuthProvider({ children }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ business, setBusiness, ready, login, demoLogin, logout }}>
+    <AuthContext.Provider value={{ business, setBusiness, ready, login, signup, demoLogin, logout }}>
       {children}
     </AuthContext.Provider>
   );

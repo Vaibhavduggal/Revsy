@@ -1,0 +1,61 @@
+import { useState } from 'react';
+import { useNavigate, Link } from 'react-router-dom';
+import { useAuth } from '../auth-context.jsx';
+import { Logo } from '../components/Icons.jsx';
+import { useToast } from '../components/useToast.jsx';
+
+export default function Signup() {
+  const { signup } = useAuth();
+  const navigate = useNavigate();
+  const { show, node } = useToast();
+  const [businessName, setBusinessName] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    try {
+      const biz = await signup(email, password, businessName);
+      show(`Welcome, ${biz.name}! Let's get you set up.`);
+      navigate('/onboarding');
+    } catch (err) {
+      show(err.message || 'Sign up failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="landing" style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', background: 'radial-gradient(900px 400px at 50% -10%, var(--accent-soft), #fff)' }}>
+      <div className="card" style={{ width: '100%', maxWidth: 400 }}>
+        <div className="brand" style={{ justifyContent: 'center', marginBottom: 8 }}><Logo /><span>Revsy</span></div>
+        <h2 style={{ textAlign: 'center', fontSize: 22 }}>Create your account</h2>
+        <p className="sub" style={{ textAlign: 'center', marginBottom: 18 }}>Start collecting Google reviews on autopilot</p>
+        <form onSubmit={submit}>
+          <div className="field">
+            <label>Business name</label>
+            <input className="input" value={businessName} onChange={(e) => setBusinessName(e.target.value)} placeholder="e.g. Punjabi Tadka" required autoFocus />
+          </div>
+          <div className="field">
+            <label>Work email</label>
+            <input className="input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@yourbusiness.com" required />
+          </div>
+          <div className="field">
+            <label>Password</label>
+            <input className="input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" required />
+          </div>
+          <div className="csv-hint" style={{ marginBottom: 12 }}>If your email was invited by an admin, you'll be pre-approved.</div>
+          <button className="btn" style={{ width: '100%' }} type="submit" disabled={loading}>
+            {loading ? 'Creating account…' : 'Create account'}
+          </button>
+        </form>
+        <div className="csv-hint" style={{ textAlign: 'center', marginTop: 14 }}>
+          Already have an account? <Link to="/login" style={{ color: 'var(--accent)', fontWeight: 600 }}>Log in</Link>
+        </div>
+      </div>
+      {node}
+    </div>
+  );
+}

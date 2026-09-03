@@ -6,6 +6,7 @@ import { Topbar } from './components/Topbar.jsx';
 import { ShellProvider } from './components/ShellContext.jsx';
 import Landing from './pages/Landing.jsx';
 import Login from './pages/Login.jsx';
+import Signup from './pages/Signup.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import Customers from './pages/Customers.jsx';
 import Messages from './pages/Messages.jsx';
@@ -71,6 +72,7 @@ export default function App() {
     <Routes>
       <Route path="/" element={<PublicOnly><Landing /></PublicOnly>} />
       <Route path="/login" element={<PublicOnly><Login /></PublicOnly>} />
+      <Route path="/signup" element={<PublicOnly><Signup /></PublicOnly>} />
       <Route path="/onboarding" element={<OnboardingGate><Onboarding /></OnboardingGate>} />
       <Route path="/dashboard" element={<Protected><Dashboard /></Protected>} />
       <Route path="/customers" element={<Protected><Customers /></Protected>} />

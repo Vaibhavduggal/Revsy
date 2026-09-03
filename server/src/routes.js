@@ -645,6 +645,9 @@ router.get('/onboarding/status', auth, async (req, res) => {
     googleAccountEmail: b.googleAccountEmail || null,
     whatsappConnected: b.whatsapp?.status === 'connected',
     whatsappBsp: b.whatsapp?.bsp || null,
+    approvalStatus: b.approvalStatus || 'pending_approval',
+    preApproved: !!b.preApproved,
+    isRejected: b.approvalStatus === 'rejected',
   });
 });
 
@@ -659,11 +662,11 @@ router.post('/onboarding/whatsapp', auth, async (req, res) => {
     whatsapp_status: 'connected',
   }).eq('id', req.business.id);
   const updated = await getBusiness(req.business.id);
-  // auto-complete if google also connected
-  if (updated.googleConnected && updated.whatsapp.status === 'connected') {
+  const isApproved = updated.approvalStatus === 'approved';
+  if (updated.googleConnected && updated.whatsapp.status === 'connected' && isApproved) {
     await db.from('businesses').update({ onboarding_completed: true }).eq('id', req.business.id);
   }
-  res.json({ ok: true, whatsappConnected: true });
+  res.json({ ok: true, whatsappConnected: true, approvalStatus: updated.approvalStatus });
 });
 
 router.get('/auth/google', async (req, res) => {
@@ -725,16 +728,27 @@ router.get('/auth/google/callback', async (req, res) => {
 
     const db = getDb();
     const businessId = String(state);
-    await db.from('businesses').update({
+    const existingBiz = await getBusiness(businessId);
+    const updates = {
       google_access_token: accessToken,
       google_refresh_token: refreshToken || null,
       google_token_expires_at: expiresAt,
       google_connected: true,
       google_account_email: accountEmail,
-    }).eq('id', businessId);
+    };
+    // Handle pre-approved: auto-approve after Google connect
+    if (existingBiz && existingBiz.preApproved) {
+      updates.approval_status = 'approved';
+      updates.approved_at = new Date().toISOString();
+      updates.rejected_at = null;
+    } else if (existingBiz && existingBiz.approvalStatus === 'pending_approval') {
+      // keep pending for manual approval, don't auto-approve
+    }
+    await db.from('businesses').update(updates).eq('id', businessId);
 
     const biz = await getBusiness(businessId);
-    if (biz && biz.whatsapp.status === 'connected') {
+    const isApproved = biz && biz.approvalStatus === 'approved';
+    if (biz && biz.whatsapp.status === 'connected' && isApproved) {
       await db.from('businesses').update({ onboarding_completed: true }).eq('id', businessId);
     }
 
@@ -751,6 +765,7 @@ router.post('/onboarding/complete', auth, async (req, res) => {
   const b = req.business;
   if (!b.googleConnected) return res.status(400).json({ error: 'Google not connected yet' });
   if (b.whatsapp?.status !== 'connected') return res.status(400).json({ error: 'WhatsApp not connected yet' });
+  if (b.approvalStatus !== 'approved') return res.status(400).json({ error: 'Waiting for admin approval' });
   const db = getDb();
   await db.from('businesses').update({ onboarding_completed: true }).eq('id', b.id);
   res.json({ ok: true, onboardingCompleted: true });
@@ -822,6 +837,79 @@ router.delete('/admin/businesses/:id', adminAuth, async (req, res) => {
   await db.from('sessions').delete().eq('business_id', id);
   await db.from('businesses').delete().eq('id', id);
   res.json({ ok: true });
+});
+
+// --- Admin: invite-by-email ---
+router.post('/admin/invites', adminAuth, async (req, res) => {
+  const db = getDb();
+  const { email, businessName } = req.body || {};
+  if (!email || !String(email).trim()) return res.status(400).json({ error: 'email is required' });
+  const em = String(email).trim().toLowerCase();
+  const { data: existing } = await db.from('invited_emails').select('*').eq('email', em).single();
+  if (existing && !existing.used) return res.status(409).json({ error: 'Email already invited and unused' });
+  const row = { id: newId('inv'), email: em, business_name: businessName ? String(businessName).trim() : '', invited_at: new Date().toISOString(), used: false };
+  await db.from('invited_emails').insert(row);
+  res.json({ invite: row });
+});
+
+router.get('/admin/invites', adminAuth, async (req, res) => {
+  const db = getDb();
+  const { data } = await db.from('invited_emails').select('*').order('invited_at', { ascending: false });
+  res.json({ invites: data || [] });
+});
+
+router.get('/admin/requests', adminAuth, async (req, res) => {
+  const db = getDb();
+  const { data } = await db.from('businesses').select('*').eq('approval_status', 'pending_approval').order('created_at', { ascending: false });
+  const list = (data || []).map(b => ({ id: b.id, name: b.name, ownerEmail: b.owner_email, googleAccountEmail: b.google_account_email, googleConnected: !!b.google_connected, createdAt: b.created_at, approvalStatus: b.approval_status }));
+  res.json({ requests: list });
+});
+
+router.post('/admin/businesses/:id/approve', adminAuth, async (req, res) => {
+  const db = getDb();
+  const { data: b } = await db.from('businesses').select('*').eq('id', req.params.id).single();
+  if (!b) return res.status(404).json({ error: 'Business not found' });
+  await db.from('businesses').update({ approval_status: 'approved', approved_at: new Date().toISOString(), rejected_at: null }).eq('id', req.params.id);
+  res.json({ ok: true });
+});
+
+router.post('/admin/businesses/:id/reject', adminAuth, async (req, res) => {
+  const db = getDb();
+  const { data: b } = await db.from('businesses').select('*').eq('id', req.params.id).single();
+  if (!b) return res.status(404).json({ error: 'Business not found' });
+  await db.from('businesses').update({ approval_status: 'rejected', rejected_at: new Date().toISOString(), approved_at: null }).eq('id', req.params.id);
+  res.json({ ok: true });
+});
+
+// --- Public signup (replaces admin creates password) ---
+router.post('/signup', async (req, res) => {
+  const db = getDb();
+  const { email, password, businessName } = req.body || {};
+  if (!email || !password) return res.status(400).json({ error: 'email and password are required' });
+  const em = String(email).trim().toLowerCase();
+  const { data: existingBiz } = await db.from('businesses').select('*').eq('owner_email', em).single();
+  if (existingBiz) return res.status(409).json({ error: 'An account with that email already exists' });
+  // check invited_emails
+  const { data: invite } = await db.from('invited_emails').select('*').eq('email', em).eq('used', false).single();
+  let preApproved = false;
+  if (invite) {
+    preApproved = true;
+    await db.from('invited_emails').update({ used: true }).eq('id', invite.id);
+  }
+  const business = {
+    id: newId('biz'), name: businessName ? String(businessName).trim() : em.split('@')[0], owner_email: em, password: hashPassword(password), is_demo: false,
+    google_review_link: '', feedback_link: '', address: '', phone: '', description: '',
+    message_template: defaultTemplate, delay_seconds: 1800, demo_mode: false, subscription_status: 'trial', created_at: new Date().toISOString(),
+    reviews_received: 0, place_id: '', whatsapp_bsp: '', whatsapp_api_key: '', whatsapp_phone_number_id: '', whatsapp_status: 'not_connected',
+    google_access_token: null, google_refresh_token: null, google_token_expires_at: null, google_connected: false, google_account_email: null, onboarding_completed: false,
+    approval_status: 'pending_approval', pre_approved: preApproved, approved_at: null, rejected_at: null,
+  };
+  // if pre-approved, we will approve after Google connect, not immediately - keep pending for now, but mark pre_approved
+  await db.from('businesses').insert(business);
+  const token = newToken();
+  await db.from('sessions').insert({ token, business_id: business.id, created_at: new Date().toISOString() });
+  const mapped = await getBusiness(business.id);
+  res.json({ token, business: publicBusiness(mapped) });
 });
 
 router.put('/admin/businesses/:id/whatsapp', adminAuth, async (req, res) => {
