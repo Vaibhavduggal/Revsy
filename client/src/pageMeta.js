@@ -10,5 +10,5 @@ const TITLES = {
 export function getTitle(pathname) {
   if (TITLES[pathname]) return TITLES[pathname];
   const base = '/' + (pathname.split('/')[1] || '');
-  return TITLES[base] || 'ReviewBot';
+  return TITLES[base] || 'Revsy';
 }

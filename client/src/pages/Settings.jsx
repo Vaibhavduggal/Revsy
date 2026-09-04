@@ -11,7 +11,8 @@ const TEMPLATE_VARS = '[customer name], [business name], [google review link]';
 export default function Settings() {
   const { business, setBusiness } = useAuth();
   const { show, node } = useToast();
-  const [form, setForm] = useState({ businessName: '', googleReviewLink: '', messageTemplate: '', delaySeconds: 7200, demoMode: false });
+  const [form, setForm] = useState({ businessName: '', googleReviewLink: '', messageTemplate: '', delaySeconds: 1800, demoMode: false, whatsappCampaignName: '', whatsappBsp: 'AiSensy' });
+  const [delayUnit, setDelayUnit] = useState('minutes');
   const [preview, setPreview] = useState('');
   const [effectiveDelay, setEffectiveDelay] = useState(7200);
   const [loaded, setLoaded] = useState(false);
@@ -25,7 +26,11 @@ export default function Settings() {
         messageTemplate: s.messageTemplate,
         delaySeconds: s.delaySeconds,
         demoMode: s.demoMode,
+        whatsappCampaignName: s.whatsappCampaignName || '',
+        whatsappBsp: s.whatsappBsp || 'AiSensy',
       });
+      const secs = Number(s.delaySeconds) || 0;
+      setDelayUnit(secs >= 3600 && secs % 3600 === 0 ? 'hours' : 'minutes');
       setLoaded(true);
     }).catch((e) => show(e.message));
   }, [show]);
@@ -97,21 +102,34 @@ export default function Settings() {
             </select>
           </div>
           <div className="field">
+            <label>WhatsApp campaign name (AiSensy)</label>
+            <input className="input" value={form.whatsappCampaignName} onChange={(e) => update('whatsappCampaignName', e.target.value)} placeholder="Exact live API campaign name" />
+            <span className="csv-hint">Template params sent: customer name, business name, review link.</span>
+          </div>
+          <div className="field">
             <label>Custom delay</label>
             <div className="flex" style={{ gap: 8 }}>
               <input
                 className="input" type="number" min="0"
-                value={Math.round(Number(form.delaySeconds) / 60)}
-                onChange={(e) => update('delaySeconds', Math.max(0, Number(e.target.value) * 60))}
+                value={delayUnit === 'hours'
+                  ? Math.round(Number(form.delaySeconds) / 3600)
+                  : Math.round(Number(form.delaySeconds) / 60)}
+                onChange={(e) => {
+                  const n = Math.max(0, Number(e.target.value) || 0);
+                  update('delaySeconds', delayUnit === 'hours' ? n * 3600 : n * 60);
+                }}
                 disabled={form.demoMode} placeholder="30"
               />
               <select
                 className="select" style={{ maxWidth: 130 }}
-                value="minutes"
+                value={delayUnit}
                 onChange={(e) => {
-                  const mins = Math.round(Number(form.delaySeconds) / 60) || 30;
-                  if (e.target.value === 'hours') update('delaySeconds', mins * 3600);
-                  else update('delaySeconds', mins * 60);
+                  const next = e.target.value;
+                  const currentVal = delayUnit === 'hours'
+                    ? Math.round(Number(form.delaySeconds) / 3600)
+                    : Math.round(Number(form.delaySeconds) / 60);
+                  setDelayUnit(next);
+                  update('delaySeconds', next === 'hours' ? currentVal * 3600 : currentVal * 60);
                 }}
                 disabled={form.demoMode}
               >
@@ -119,7 +137,7 @@ export default function Settings() {
                 <option value="hours">hours</option>
               </select>
             </div>
-            <span className="csv-hint">Maps to delaySeconds ({form.delaySeconds}s). Default 30 minutes (1800s).</span>
+            <span className="csv-hint">Default is 30 minutes. Choose immediate above to send as soon as a customer is added.</span>
           </div>
           <div className="field">
             <div className="flex between">

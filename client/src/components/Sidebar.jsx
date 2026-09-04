@@ -20,7 +20,7 @@ export function Sidebar() {
       <div className="sidebar-brand">
         <Logo />
         <div>
-          <div className="ws-name">ReviewBot</div>
+          <div className="ws-name">Revsy</div>
           <div className="ws-sub">{business?.name || 'Your workspace'}</div>
         </div>
       </div>

@@ -72,8 +72,16 @@ export async function recordActivity(businessId, activity) {
 }
 
 export function publicBusiness(b) {
-  const { passwordHash, whatsapp, ...rest } = b;
-  return { ...rest, whatsapp: { bsp: whatsapp?.bsp || '', status: whatsapp?.status || 'not_connected' } };
+  const { passwordHash, whatsapp, googleAccessToken, googleRefreshToken, ...rest } = b;
+  return {
+    ...rest,
+    whatsapp: {
+      bsp: whatsapp?.bsp || '',
+      status: whatsapp?.status || 'not_connected',
+      phoneNumberId: whatsapp?.phoneNumberId ? 'set' : '',
+      campaignName: whatsapp?.campaignName || '',
+    },
+  };
 }
 
 export { getDb };

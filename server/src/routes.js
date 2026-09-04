@@ -1,8 +1,9 @@
 import { Router } from 'express';
 import { getDb, getBusiness, renderTemplate, hashPassword, verifyPassword, newToken, defaultTemplate, mapBusiness, mapCustomer, mapRequest, mapReview, mapReviewSummary, mapFeedback, mapPendingSend, mapActivity } from './db.js';
 import { auth, adminAuth, recordActivity, publicBusiness } from './auth.js';
-import { enqueueSend, retrySend, getFailedSends } from './queue.js';
-import { firstRunClustering, classifyOneReview, weeklyUpdateBusiness, getCurrentSummaryRow, issuesFromRow } from './ai.js';
+import { enqueueSend, retrySend, getFailedSends, processDueSends } from './queue.js';
+import { classifyOneReview, weeklyUpdateBusiness, getCurrentSummaryRow, issuesFromRow, runFirstClusteringForBusiness } from './ai.js';
+import { listGoogleLocations, saveSelectedLocation, autoSelectLocationIfSingle, syncGoogleReviewsForBusiness } from './google.js';
 
 const router = Router();
 
@@ -178,6 +179,7 @@ router.post('/admin/logout', adminAuth, async (req, res) => {
 
 // --- Dashboard ---
 router.get('/dashboard', auth, async (req, res) => {
+  processDueSends().catch(() => {});
   const biz = req.business;
   const reqs = await getRequestsForBusiness(biz.id);
   const sent = reqs.filter((r) => r.status !== 'Scheduled').length;
@@ -244,6 +246,7 @@ router.post('/customers', auth, async (req, res) => {
   const { name, phone } = req.body || {};
   if (!name || !phone) return res.status(400).json({ error: 'Name and phone are required' });
   const { customer } = await createCustomerAndSchedule(req.business, name.trim(), phone.trim());
+  processDueSends().catch(() => {});
   res.json({ customer });
 });
 
@@ -486,103 +489,72 @@ router.post('/reviews/summaries/issues/:issueId/read', auth, async (req, res) =>
 });
 
 // Weekly cron: Vercel Cron calls GET /api/cron/weekly with Authorization: Bearer $CRON_SECRET
-router.get('/cron/weekly', async (req, res) => {
-  const secret = process.env.CRON_SECRET || '';
-  if (secret) {
-    const authz = req.headers.authorization || '';
-    if (authz !== `Bearer ${secret}`) return res.status(401).json({ error: 'Unauthorized' });
+router.get('/cron/sends', async (req, res) => {
+  if (!assertCron(req, res)) return;
+  try {
+    const result = await processDueSends();
+    res.json({ ok: true, ...result });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
   }
+});
+
+router.get('/cron/weekly', async (req, res) => {
+  if (!assertCron(req, res)) return;
   const db = getDb();
-  const { data: businesses } = await db.from('businesses').select('id').eq('approval_status', 'approved');
+  const { data: businesses } = await db.from('businesses').select('*').eq('approval_status', 'approved');
   const results = [];
-  for (const b of (businesses || [])) {
+  for (const row of (businesses || [])) {
     try {
-      const r = await weeklyUpdateBusiness(b.id);
-      results.push({ businessId: b.id, ...r });
-    } catch (e) { results.push({ businessId: b.id, error: e.message }); }
+      const biz = await getBusiness(row.id);
+      if (biz?.googleConnected) {
+        await syncGoogleReviewsForBusiness(biz, { classifyNegative: classifyOneReview });
+      }
+      const r = await weeklyUpdateBusiness(row.id);
+      results.push({ businessId: row.id, ...r });
+    } catch (e) { results.push({ businessId: row.id, error: e.message }); }
   }
   res.json({ ok: true, results });
 });
 
-async function getValidGoogleAccessToken(business) {
-  if (!business.googleAccessToken) return null;
-  const expiresAt = business.googleTokenExpiresAt ? new Date(business.googleTokenExpiresAt).getTime() : 0;
-  if (expiresAt > Date.now() + 60000) return business.googleAccessToken;
-  const refreshToken = business.googleRefreshToken;
-  const clientId = process.env.GOOGLE_CLIENT_ID;
-  const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
-  if (!refreshToken || !clientId || !clientSecret) return business.googleAccessToken;
-  try {
-    const r = await fetch('https://oauth2.googleapis.com/token', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({ client_id: clientId, client_secret: clientSecret, refresh_token: refreshToken, grant_type: 'refresh_token' }),
-    });
-    const d = await r.json();
-    if (!r.ok || !d.access_token) return business.googleAccessToken;
-    const newExpiresAt = new Date(Date.now() + (d.expires_in || 3600) * 1000).toISOString();
-    const db = getDb();
-    await db.from('businesses').update({ google_access_token: d.access_token, google_token_expires_at: newExpiresAt }).eq('id', business.id);
-    business.googleAccessToken = d.access_token;
-    business.googleTokenExpiresAt = newExpiresAt;
-    return d.access_token;
-  } catch { return business.googleAccessToken; }
+function assertCron(req, res) {
+  const secret = process.env.CRON_SECRET || '';
+  if (!secret) return true;
+  const authz = req.headers.authorization || '';
+  if (authz !== `Bearer ${secret}`) {
+    res.status(401).json({ error: 'Unauthorized' });
+    return false;
+  }
+  return true;
 }
 
 router.post('/reviews/google/sync', auth, async (req, res) => {
-  const db = getDb();
-  const biz = req.business;
-  // Prefer per-business OAuth token; fallback to legacy Places API key only if OAuth not connected
-  const hasOAuth = !!biz.googleConnected && !!biz.googleAccessToken;
-  const apiKey = process.env.GOOGLE_PLACES_API_KEY;
-  if (!biz.placeId) {
-    return res.json({ connected: false, message: 'No Google Place ID is set for this business yet — add it in Settings.' });
-  }
-  if (!hasOAuth && !apiKey) {
-    return res.json({ connected: false, message: hasOAuth ? 'Google account connected but token missing — reconnect in onboarding.' : 'Google not connected — complete onboarding to connect your Business Profile.' });
-  }
+  const result = await syncGoogleReviewsForBusiness(req.business, { classifyNegative: classifyOneReview });
+  res.json(result);
+});
+
+router.get('/onboarding/google/locations', auth, async (req, res) => {
   try {
-    let accessToken = null;
-    if (hasOAuth) accessToken = await getValidGoogleAccessToken(biz);
-    let url;
-    let headers = {};
-    if (hasOAuth && accessToken) {
-      // Use OAuth token to call Places Details (still works with Bearer, key param optional)
-      url = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${encodeURIComponent(biz.placeId)}&fields=review,rating,user_ratings_total`;
-      headers = { Authorization: `Bearer ${accessToken}` };
-      // also include API key if available as fallback param
-      if (apiKey) url += `&key=${apiKey}`;
-    } else {
-      url = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${encodeURIComponent(biz.placeId)}&fields=review,rating,user_ratings_total&key=${apiKey}`;
-    }
-    const resp = await fetch(url, { headers });
-    const data = await resp.json();
-    if (data.status !== 'OK') return res.json({ connected: false, message: `Google API error: ${data.status}` });
-    const googleReviews = data.result?.reviews || [];
-    let added = 0;
-    for (const gr of googleReviews) {
-      const googleReviewId = `g_${gr.author_name}_${gr.time}`;
-      const { data: existingReview } = await db.from('reviews').select('*').eq('google_review_id', googleReviewId).limit(1).single();
-      const { data: existingFeedback } = await db.from('feedback').select('*').eq('google_review_id', googleReviewId).limit(1).single();
-      if (existingReview || existingFeedback) continue;
-      const createdAt = new Date(gr.time * 1000).toISOString();
-      const newRevId = newId('rev');
-      await db.from('reviews').insert({ id: newRevId, business_id: biz.id, customer_id: null, customer_name: gr.author_name, rating: gr.rating, text: gr.text || '', source: 'google', google_review_id: googleReviewId, request_id: null, sent_at: null, created_at: createdAt, is_read: false, ai_flag: null, ai_issue_id: null });
-      if (gr.rating < 4) {
-        await db.from('feedback').insert({ id: newId('fb'), business_id: biz.id, customer_id: null, customer_name: gr.author_name, phone: '', complaint: gr.text || `${gr.rating}★ Google review`, google_review_id: googleReviewId, created_at: createdAt });
-        // immediate one-off AI classification (never blocks sync)
-        try {
-          await classifyOneReview(biz.id, { id: newRevId, rating: gr.rating, text: gr.text || '' });
-        } catch (e) { console.error('immediate AI classify failed (retry on cron):', e.message); }
-      }
-      added++;
-    }
-    const { count } = await db.from('reviews').select('*', { count: 'exact', head: true }).eq('business_id', biz.id).gte('rating', 4);
-    await db.from('businesses').update({ reviews_received: count || 0 }).eq('id', biz.id);
-    res.json({ connected: true, added, total: googleReviews.length });
-  } catch (err) {
-    res.json({ connected: false, message: `Could not reach Google: ${err.message}` });
+    const locations = await listGoogleLocations(req.business);
+    res.json({ locations, selected: req.business.googleLocationName || null });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
   }
+});
+
+router.post('/onboarding/google/location', auth, async (req, res) => {
+  const { locationName, accountName, title, placeId, reviewLink } = req.body || {};
+  if (!locationName) return res.status(400).json({ error: 'locationName is required' });
+  await saveSelectedLocation(req.business.id, {
+    locationName,
+    accountName,
+    title,
+    placeId,
+    reviewLink: reviewLink || (placeId ? `https://search.google.com/local/writereview?placeid=${placeId}` : ''),
+  });
+  const biz = await getBusiness(req.business.id);
+  syncGoogleReviewsForBusiness(biz, { classifyNegative: classifyOneReview }).catch((e) => console.error(e));
+  res.json({ ok: true, googleReviewLink: reviewLink || biz.googleReviewLink, placeId: placeId || biz.placeId });
 });
 
 router.get('/pending-sends/failed', auth, async (req, res) => {
@@ -673,13 +645,13 @@ router.get('/activity', auth, async (req, res) => {
 
 router.get('/settings', auth, (req, res) => {
   const b = req.business;
-  res.json({ businessName: b.name, googleReviewLink: b.googleReviewLink, feedbackLink: b.feedbackLink, messageTemplate: b.messageTemplate, delaySeconds: b.delaySeconds, demoMode: b.demoMode, reviewsReceived: b.reviewsReceived || 0, placeId: b.placeId || '', whatsappStatus: b.whatsapp?.status || 'not_connected', whatsappBsp: b.whatsapp?.bsp || '', onboardingCompleted: !!b.onboardingCompleted, isDemo: !!b.isDemo, googleConnected: !!b.googleConnected });
+  res.json({ businessName: b.name, googleReviewLink: b.googleReviewLink, feedbackLink: b.feedbackLink, messageTemplate: b.messageTemplate, delaySeconds: b.delaySeconds, demoMode: b.demoMode, reviewsReceived: b.reviewsReceived || 0, placeId: b.placeId || '', whatsappStatus: b.whatsapp?.status || 'not_connected', whatsappBsp: b.whatsapp?.bsp || '', whatsappCampaignName: b.whatsapp?.campaignName || '', onboardingCompleted: !!b.onboardingCompleted, isDemo: !!b.isDemo, googleConnected: !!b.googleConnected });
 });
 
 router.put('/settings', auth, async (req, res) => {
   const db = getDb();
   const b = req.business;
-  const { businessName, googleReviewLink, feedbackLink, messageTemplate, delaySeconds, demoMode, placeId } = req.body || {};
+  const { businessName, googleReviewLink, feedbackLink, messageTemplate, delaySeconds, demoMode, placeId, whatsappCampaignName, whatsappBsp } = req.body || {};
   const updates = {};
   if (typeof businessName === 'string' && businessName.trim()) updates.name = businessName.trim();
   if (typeof googleReviewLink === 'string') updates.google_review_link = googleReviewLink.trim();
@@ -688,6 +660,11 @@ router.put('/settings', auth, async (req, res) => {
   if (Number.isFinite(Number(delaySeconds))) updates.delay_seconds = Number(delaySeconds);
   if (typeof demoMode === 'boolean') updates.demo_mode = demoMode;
   if (typeof placeId === 'string') updates.place_id = placeId.trim();
+  if (typeof whatsappCampaignName === 'string' || typeof whatsappBsp === 'string') {
+    const bsp = (typeof whatsappBsp === 'string' && whatsappBsp.trim()) ? whatsappBsp.trim() : (b.whatsapp?.bsp || 'AiSensy');
+    const campaign = typeof whatsappCampaignName === 'string' ? whatsappCampaignName.trim() : (b.whatsapp?.campaignName || '');
+    updates.whatsapp_bsp = campaign ? `${bsp}::${campaign}` : bsp;
+  }
   if (Object.keys(updates).length > 0) await db.from('businesses').update(updates).eq('id', b.id);
   const updated = { ...b, ...updates };
   res.json({ businessName: updated.name, googleReviewLink: updated.googleReviewLink, feedbackLink: updated.feedbackLink, messageTemplate: updated.messageTemplate, delaySeconds: updated.delaySeconds, demoMode: updated.demoMode, reviewsReceived: updated.reviewsReceived || 0, placeId: updated.placeId || '', whatsappStatus: updated.whatsapp?.status || 'not_connected', whatsappBsp: updated.whatsapp?.bsp || '' });
@@ -711,16 +688,19 @@ router.get('/onboarding/status', auth, async (req, res) => {
     approvalStatus: b.approvalStatus || 'pending_approval',
     preApproved: !!b.preApproved,
     isRejected: b.approvalStatus === 'rejected',
+    googleLocationName: b.googleLocationName || null,
+    needsLocation: !!b.googleConnected && !b.googleLocationName,
   });
 });
 
 router.post('/onboarding/whatsapp', auth, async (req, res) => {
   const db = getDb();
-  const { apiKey, phoneNumberId } = req.body || {};
-  if (!apiKey || !String(apiKey).trim()) return res.status(400).json({ error: 'AiSensy API key is required' });
+  const { apiKey, phoneNumberId, provider, campaignName } = req.body || {};
+  if (!apiKey || !String(apiKey).trim()) return res.status(400).json({ error: 'WhatsApp API key is required' });
+  const bsp = provider ? String(provider).trim() : 'AiSensy';
   await db.from('businesses').update({
     whatsapp_api_key: String(apiKey).trim(),
-    whatsapp_bsp: 'AiSensy',
+    whatsapp_bsp: campaignName ? `${bsp}::${campaignName}` : bsp,
     whatsapp_phone_number_id: phoneNumberId ? String(phoneNumberId).trim() : '',
     whatsapp_status: 'connected',
   }).eq('id', req.business.id);
@@ -815,10 +795,23 @@ router.get('/auth/google/callback', async (req, res) => {
       await db.from('businesses').update({ onboarding_completed: true }).eq('id', businessId);
     }
 
-    const frontendBase = process.env.FRONTEND_URL || req.headers.referer || '/onboarding';
-    // redirect to frontend onboarding with success flag
-    const redirectTo = (frontendBase.includes('localhost') ? 'http://localhost:4000/onboarding?google=success' : '/onboarding?google=success');
-    res.redirect(redirectTo);
+    try {
+      const fresh = await getBusiness(businessId);
+      if (fresh) {
+        await autoSelectLocationIfSingle(fresh);
+        const bizForSync = await getBusiness(businessId);
+        if (bizForSync?.googleLocationName) {
+          await syncGoogleReviewsForBusiness(bizForSync, { classifyNegative: classifyOneReview });
+        }
+      }
+    } catch (e) {
+      console.error('post-oauth location/sync failed:', e.message);
+    }
+
+    const frontendBase = process.env.FRONTEND_URL
+      || (process.env.GOOGLE_REDIRECT_URI ? new URL(process.env.GOOGLE_REDIRECT_URI).origin : '');
+    const redirectTo = `${String(frontendBase).replace(/\/$/, '')}/onboarding?google=success`;
+    res.redirect(redirectTo || '/onboarding?google=success');
   } catch (e) {
     res.status(500).send('OAuth callback failed: ' + e.message);
   }
@@ -858,10 +851,12 @@ router.get('/admin/businesses', adminAuth, async (req, res) => {
   for (const b of (businesses || [])) {
     const { count: reqCount } = await db.from('requests').select('*', { count: 'exact', head: true }).eq('business_id', b.id).neq('status', 'Scheduled');
     const { count: custCount } = await db.from('customers').select('*', { count: 'exact', head: true }).eq('business_id', b.id);
+    const { count: reviewCount } = await db.from('reviews').select('*', { count: 'exact', head: true }).eq('business_id', b.id);
     list.push({
       id: b.id, name: b.name, ownerEmail: b.owner_email, subscriptionStatus: b.subscription_status, isDemo: !!b.is_demo,
-      requestsSent: reqCount || 0, customersCount: custCount || 0, createdAt: b.created_at,
-      whatsapp: { bsp: b.whatsapp_bsp || '', status: b.whatsapp_status || 'not_connected', phoneNumberId: b.whatsapp_phone_number_id || '' },
+      approvalStatus: b.approval_status || 'pending_approval', googleConnected: !!b.google_connected,
+      requestsSent: reqCount || 0, customersCount: custCount || 0, reviewsCount: reviewCount || 0, createdAt: b.created_at,
+      whatsapp: { bsp: b.whatsapp_bsp || '', status: b.whatsapp_status || 'not_connected', phoneNumberId: b.whatsapp_phone_number_id || '', campaignName: b.whatsapp_campaign_name || '' },
       placeId: b.place_id || '', googleReviewLink: b.google_review_link || '',
     });
   }
@@ -897,6 +892,7 @@ router.delete('/admin/businesses/:id', adminAuth, async (req, res) => {
   await db.from('feedback').delete().eq('business_id', id);
   await db.from('activities').delete().eq('business_id', id);
   await db.from('pending_sends').delete().eq('business_id', id);
+  await db.from('review_summaries').delete().eq('business_id', id);
   await db.from('sessions').delete().eq('business_id', id);
   await db.from('businesses').delete().eq('id', id);
   res.json({ ok: true });
@@ -923,7 +919,7 @@ router.get('/admin/invites', adminAuth, async (req, res) => {
 
 router.get('/admin/requests', adminAuth, async (req, res) => {
   const db = getDb();
-  const { data } = await db.from('businesses').select('*').eq('approval_status', 'pending_approval').order('created_at', { ascending: false });
+  const { data } = await db.from('businesses').select('*').eq('approval_status', 'pending_approval').eq('google_connected', true).order('created_at', { ascending: false });
   const list = (data || []).map(b => ({ id: b.id, name: b.name, ownerEmail: b.owner_email, googleAccountEmail: b.google_account_email, googleConnected: !!b.google_connected, createdAt: b.created_at, approvalStatus: b.approval_status }));
   res.json({ requests: list });
 });
@@ -933,19 +929,13 @@ router.post('/admin/businesses/:id/approve', adminAuth, async (req, res) => {
   const { data: b } = await db.from('businesses').select('*').eq('id', req.params.id).single();
   if (!b) return res.status(404).json({ error: 'Business not found' });
   await db.from('businesses').update({ approval_status: 'approved', approved_at: new Date().toISOString(), rejected_at: null }).eq('id', req.params.id);
-  // FIRST RUN: generate initial issues list from trailing 12 months (fire-and-forget, never blocks approval)
   (async () => {
     try {
-      const since = new Date(Date.now() - 365 * 86400000).toISOString();
-      const { data } = await db.from('reviews').select('*').eq('business_id', req.params.id).lt('rating', 4).gte('created_at', since).order('created_at', { ascending: true }).limit(200);
-      const negatives = (data || []).filter((r) => !r.ai_flag).map((r) => ({ id: r.id, rating: r.rating, text: r.text }));
-      if (negatives.length) await firstRunClustering(req.params.id, negatives);
-      else {
-        const cur = await getCurrentSummaryRow(req.params.id);
-        if (!cur) {
-          await db.from('review_summaries').insert({ id: newId('sum'), business_id: req.params.id, period_start: since, period_end: new Date().toISOString(), summary_text: '', areas_of_improvement: '', review_count: 0, is_read: false, created_at: new Date().toISOString(), issues: [] });
-        }
+      const biz = await getBusiness(req.params.id);
+      if (biz?.googleConnected) {
+        await syncGoogleReviewsForBusiness(biz, { classifyNegative: classifyOneReview });
       }
+      await runFirstClusteringForBusiness(req.params.id);
     } catch (e) { console.error('first-run AI failed (retry on cron):', e.message); }
   })();
   res.json({ ok: true });
@@ -994,11 +984,15 @@ router.put('/admin/businesses/:id/whatsapp', adminAuth, async (req, res) => {
   const db = getDb();
   const { data: business } = await db.from('businesses').select('*').eq('id', req.params.id).single();
   if (!business) return res.status(404).json({ error: 'Business not found' });
-  const { bsp, apiKey, phoneNumberId, status } = req.body || {};
+  const { bsp, apiKey, phoneNumberId, status, campaignName } = req.body || {};
   const updates = {};
-  if (typeof bsp === 'string') updates.whatsapp_bsp = bsp.trim();
   if (typeof apiKey === 'string' && apiKey.trim()) updates.whatsapp_api_key = apiKey.trim();
   if (typeof phoneNumberId === 'string') updates.whatsapp_phone_number_id = phoneNumberId.trim();
+  if (typeof bsp === 'string' || typeof campaignName === 'string') {
+    const provider = typeof bsp === 'string' ? bsp.trim() : (business.whatsapp_bsp || '').split('::')[0];
+    const campaign = typeof campaignName === 'string' ? campaignName.trim() : ((business.whatsapp_bsp || '').split('::')[1] || '');
+    updates.whatsapp_bsp = campaign ? `${provider}::${campaign}` : provider;
+  }
   updates.whatsapp_status = status || (apiKey ? 'connected' : (business.whatsapp_status || 'not_connected'));
   await db.from('businesses').update(updates).eq('id', req.params.id);
   res.json({ whatsapp: { bsp: updates.whatsapp_bsp || business.whatsapp_bsp, status: updates.whatsapp_status, phoneNumberId: updates.whatsapp_phone_number_id || business.whatsapp_phone_number_id } });

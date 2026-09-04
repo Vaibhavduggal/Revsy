@@ -57,7 +57,9 @@ async function seed() {
   const DAY = 86400000;
 
   console.log('Seeding admin...');
-  await db.from('admins').insert({ id: 'admin_1', email: 'admin@revsy.app', password_hash: hashPassword('ChangeMe123!'), created_at: new Date().toISOString() });
+  const adminEmail = String(process.env.ADMIN_EMAIL || 'vaibhavduggal88@gmail.com').trim().toLowerCase();
+  const adminPassword = process.env.ADMIN_PASSWORD || 'admin123';
+  await db.from('admins').insert({ id: 'admin_1', email: adminEmail, password_hash: hashPassword(adminPassword), created_at: new Date().toISOString() });
 
   console.log('Seeding business...');
   const business = {

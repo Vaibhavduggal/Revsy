@@ -1,13 +1,6 @@
-import { getDb, getBusiness, mapPendingSend, mapCustomer, mapRequest, mapActivity } from './db.js';
+import { getDb, getBusiness, mapPendingSend, mapCustomer } from './db.js';
 import { recordActivity } from './auth.js';
-
-export async function sendWhatsAppMessage(phone, message) {
-  if (message && message.includes('__FORCE_FAIL__')) {
-    throw new Error('Simulated delivery failure');
-  }
-  if (!phone || !message) throw new Error('Missing phone or message');
-  return { delivered: true, at: new Date().toISOString() };
-}
+import { sendBusinessWhatsApp } from './whatsapp.js';
 
 export async function getDueSends() {
   const db = getDb();
@@ -63,7 +56,12 @@ async function processRow(row) {
   const customer = custData ? mapCustomer(custData) : null;
 
   try {
-    await sendWhatsAppMessage(row.phone, row.message);
+    if (!business) throw new Error('Business not found for pending send');
+    await sendBusinessWhatsApp(business, {
+      phone: row.phone,
+      message: row.message,
+      customerName: customer?.name,
+    });
     // Update pending_sends row
     await db.from('pending_sends').update({
       status: 'sent',
@@ -135,11 +133,22 @@ export function startSendPoller(intervalMs = 60000) {
   return timer;
 }
 
-export async function resumePendingSends() {
+export async function processDueSends() {
   const due = await getDueSends();
-  if (due.length > 0) {
-    for (const row of due) await processRow(row);
+  const results = [];
+  for (const row of due) {
+    try {
+      await processRow(row);
+      results.push({ id: row.id, ok: true });
+    } catch (e) {
+      results.push({ id: row.id, ok: false, error: e.message });
+    }
   }
+  return { processed: results.length, results };
+}
+
+export async function resumePendingSends() {
+  return processDueSends();
 }
 
 export async function retrySend(rowId) {

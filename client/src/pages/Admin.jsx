@@ -81,7 +81,7 @@ function InviteModal({ onClose, onAdded }) {
 
 function WhatsappModal({ biz, onClose, onSaved }) {
   const { show, node } = useToast();
-  const [form, setForm] = useState({ bsp: biz.whatsapp?.bsp || 'RichAutomate', apiKey: '', phoneNumberId: biz.whatsapp?.phoneNumberId || '' });
+  const [form, setForm] = useState({ bsp: biz.whatsapp?.bsp || 'AiSensy', apiKey: '', phoneNumberId: biz.whatsapp?.phoneNumberId || '', campaignName: biz.whatsapp?.campaignName || '' });
   const [busy, setBusy] = useState(false);
   const update = (k, v) => setForm((f) => ({ ...f, [k]: v }));
 
@@ -106,6 +106,7 @@ function WhatsappModal({ biz, onClose, onSaved }) {
           </select>
         </div>
         <div className="field"><label>Phone number ID</label><input className="input" value={form.phoneNumberId} onChange={(e) => update('phoneNumberId', e.target.value)} placeholder="From the BSP dashboard" /></div>
+        <div className="field"><label>AiSensy campaign name</label><input className="input" value={form.campaignName} onChange={(e) => update('campaignName', e.target.value)} placeholder="Live API campaign name" /></div>
         <div className="field">
           <label>API key {biz.whatsapp?.status === 'connected' ? <span className="badge reviewed sm">Already connected</span> : null}</label>
           <input className="input" value={form.apiKey} onChange={(e) => update('apiKey', e.target.value)} placeholder="Leave blank to keep the existing key" />
@@ -244,7 +245,7 @@ export default function Admin() {
             ) : (
               <table className="table">
                 <thead>
-                  <tr><th>Business</th><th>Owner email</th><th>Status</th><th>WhatsApp</th><th>Google</th><th>Requests</th><th>Customers</th><th>Created</th><th></th></tr>
+                  <tr><th>Business</th><th>Owner email</th><th>Status</th><th>WhatsApp</th><th>Google</th><th>Reviews</th><th>Requests</th><th>Customers</th><th>Created</th><th></th></tr>
                 </thead>
                 <tbody>
                   {list.map((b) => (
@@ -261,9 +262,10 @@ export default function Admin() {
                       </td>
                       <td>
                         <button className="btn ghost sm" onClick={() => setGoogleTarget(b)}>
-                          {b.placeId ? <span className="badge reviewed sm">Connected</span> : <span className="badge sent sm">Not connected</span>}
+                          {b.googleConnected || b.placeId ? <span className="badge reviewed sm">Connected</span> : <span className="badge sent sm">Not connected</span>}
                         </button>
                       </td>
+                      <td>{b.reviewsCount ?? 0}</td>
                       <td>{b.requestsSent}</td>
                       <td>{b.customersCount}</td>
                       <td className="muted">{fmtDate(b.createdAt)}</td>

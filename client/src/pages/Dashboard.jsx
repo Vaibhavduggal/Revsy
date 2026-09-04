@@ -246,7 +246,7 @@ export default function Dashboard() {
         <div className="flex between">
           <div>
             <h3>AI Insights</h3>
-            <div className="sub">Distinct recurring issues tracked over time (Groq Llama 3.3 70B). Repeated reports increment the count — no fresh alert.</div>
+            <div className="sub">Distinct recurring issues from negative Google reviews. Repeated reports increment the count — they are not treated as new.</div>
           </div>
           <span className="badge sent sm">{issues.length} issues</span>
         </div>
@@ -281,16 +281,13 @@ export default function Dashboard() {
         <div className="stat">
           <div className="icon"><Icon.star width={20} height={20} /></div>
           <div className="label">Reviews received</div>
-          <div className="value" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            {stats.totalReceived}
-            <span className="flex" style={{ gap: 2 }}>
+          <div className="value">{stats.totalReceived}</div>
+          {business?.isDemo && (
+            <span className="flex" style={{ gap: 2, marginTop: 8 }}>
               <button className="btn secondary sm" onClick={dec} style={{ padding: '2px 8px' }}>−</button>
               <button className="btn green sm" onClick={inc} style={{ padding: '2px 8px' }}>+</button>
             </span>
-          </div>
-          <button className="btn ghost sm" style={{ marginTop: 8, padding: '4px 8px' }} onClick={() => setLogOpen(true)}>
-            <Icon.plus width={13} height={13} /> Log a review
-          </button>
+          )}
         </div>
         <div className="stat">
           <div className="icon"><Icon.rocket width={20} height={20} /></div>

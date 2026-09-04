@@ -34,7 +34,27 @@ export async function initDb() {
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) throw new Error('SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set');
   supabase = createClient(url, key);
+  await ensurePlatformAdmin();
   return supabase;
+}
+
+async function ensurePlatformAdmin() {
+  const email = String(process.env.ADMIN_EMAIL || '').trim().toLowerCase();
+  const password = process.env.ADMIN_PASSWORD || '';
+  if (!email || !password) return;
+  const { data: match } = await supabase.from('admins').select('id').eq('email', email).maybeSingle();
+  if (match) return;
+  const { data: all } = await supabase.from('admins').select('id');
+  for (const row of all || []) {
+    await supabase.from('admin_sessions').delete().eq('admin_id', row.id);
+    await supabase.from('admins').delete().eq('id', row.id);
+  }
+  await supabase.from('admins').insert({
+    id: 'admin_1',
+    email,
+    password_hash: hashPassword(password),
+    created_at: new Date().toISOString(),
+  });
 }
 
 export function getDb() {
@@ -72,9 +92,10 @@ function mapBusiness(row) {
     createdAt: row.created_at,
     placeId: row.place_id,
     whatsapp: {
-      bsp: row.whatsapp_bsp || '',
+      bsp: (row.whatsapp_bsp || '').split('::')[0] || '',
       apiKey: row.whatsapp_api_key || '',
       phoneNumberId: row.whatsapp_phone_number_id || '',
+      campaignName: row.whatsapp_campaign_name || (row.whatsapp_bsp || '').split('::')[1] || '',
       status: row.whatsapp_status || 'not_connected',
     },
     reviewsReceived: row.reviews_received || 0,
@@ -83,6 +104,8 @@ function mapBusiness(row) {
     googleTokenExpiresAt: row.google_token_expires_at || null,
     googleConnected: !!row.google_connected,
     googleAccountEmail: row.google_account_email || null,
+    googleAccountName: row.google_account_name || null,
+    googleLocationName: row.google_location_name || (String(row.place_id || '').includes('/locations/') ? row.place_id : null),
     onboardingCompleted: !!row.onboarding_completed,
     approvalStatus: row.approval_status || 'pending_approval',
     preApproved: !!row.pre_approved,
@@ -543,7 +566,7 @@ function buildSeed() {
   business.reviewsReceived = reviewsReceived;
 
   const admins = [
-    { id: 'admin_1', email: 'admin@revsy.app', passwordHash: hashPassword('ChangeMe123!') },
+    { id: 'admin_1', email: 'vaibhavduggal88@gmail.com', passwordHash: hashPassword('admin123') },
   ];
 
   return {

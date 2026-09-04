@@ -8,67 +8,68 @@ export default function Landing() {
   return (
     <div className="landing">
       <header className="land-top">
-        <div className="brand"><Logo /><span>ReviewBot</span></div>
+        <div className="brand"><Logo /><span>Revsy</span></div>
         <div className="flex" style={{ gap: 10 }}>
-          <button className="btn secondary sm" onClick={() => navigate('/login')}>Log in</button>
-          <button className="btn sm" onClick={() => navigate('/login')}>Start Free Trial</button>
+          <button className="btn ghost sm" onClick={() => navigate('/admin/login')}>Owner login</button>
+          <button className="btn secondary sm" onClick={() => navigate('/login')}>Client login</button>
+          <button className="btn sm" onClick={() => navigate('/signup')}>Get started</button>
         </div>
       </header>
 
       <section className="hero">
-        <span className="pill">For restaurants, salons, clinics & local brands</span>
-        <h1>Get More Google Reviews on <span className="hl">Autopilot</span></h1>
+        <span className="pill">For restaurants that want more Google reviews — and fewer surprises</span>
+        <h1>Ask for reviews on WhatsApp. <span className="hl">Fix what keeps coming up.</span></h1>
         <p>
-          ReviewBot automatically follows up with every customer on WhatsApp and turns happy
-          visitors into 5-star Google reviews — no apps, no APIs, no headaches.
+          Revsy sends a personalized WhatsApp review request after each visit, pulls your real Google reviews,
+          and uses AI to group negative feedback into the issues you should actually fix.
         </p>
         <div className="cta-row">
-          <button className="btn" onClick={() => navigate('/login')}>
-            <Icon.rocket width={18} height={18} /> Start Free Trial
+          <button className="btn" onClick={() => navigate('/signup')}>
+            <Icon.rocket width={18} height={18} /> Create a business account
           </button>
-          <button className="btn secondary" onClick={() => navigate('/login')}>See Demo</button>
+          <button className="btn secondary" onClick={() => navigate('/login')}>Client login</button>
         </div>
       </section>
 
       <section className="features">
         <div className="feature card">
           <div className="ico"><Icon.bolt width={26} height={26} /></div>
-          <h3>Automated WhatsApp follow-ups</h3>
-          <p>Customers get a friendly review request on WhatsApp within hours of their visit — fully automated and on-brand.</p>
+          <h3>Automated WhatsApp asks</h3>
+          <p>Add a name and phone. Revsy queues a review request immediately or after the delay you set.</p>
         </div>
         <div className="feature card">
           <div className="ico"><Icon.star width={26} height={26} /></div>
-          <h3>More 5-star reviews</h3>
-          <p>A direct link to your Google review page means customers actually complete the review, lifting your rating fast.</p>
+          <h3>Real Google reviews</h3>
+          <p>Connect Business Profile once. Positive and negative reviews stay side by side, with unread ones highlighted.</p>
         </div>
         <div className="feature card">
           <div className="ico"><Icon.chart width={26} height={26} /></div>
-          <h3>Live dashboard & insights</h3>
-          <p>Track requests sent, reviews received, and your conversion rate in real time, with weekly trends at a glance.</p>
+          <h3>AI issues, not summaries</h3>
+          <p>Recurring problems are clustered. New reviews increment a known issue or flag a genuinely new one.</p>
         </div>
       </section>
 
       <section className="pricing">
-        <h2>Simple, honest pricing</h2>
-        <div className="sub">Everything you need to grow your Google rating. Cancel anytime.</div>
+        <h2>Simple pricing</h2>
+        <div className="sub">Built for local restaurants. Cancel anytime.</div>
         <div className="price-card">
           <div className="amount">₹{PRICE}<span className="per">/month</span></div>
-          <div className="sub" style={{ marginTop: 6 }}>14-day free trial · no card required</div>
+          <div className="sub" style={{ marginTop: 6 }}>You onboard clients from the Revsy admin panel</div>
           <ul>
-            <li>Unlimited WhatsApp review requests</li>
-            <li>Editable message templates</li>
-            <li>Live dashboard + weekly charts</li>
-            <li>CSV customer import</li>
-            <li>Activity feed & delivery tracking</li>
+            <li>WhatsApp review requests on your client’s own BSP</li>
+            <li>Google Business Profile review sync</li>
+            <li>Positive vs negative trends</li>
+            <li>AI recurring-issue insights</li>
+            <li>Separate owner admin and client dashboards</li>
           </ul>
-          <button className="btn" style={{ width: '100%' }} onClick={() => navigate('/login')}>
-            <Icon.rocket width={18} height={18} /> Start Free Trial
+          <button className="btn" style={{ width: '100%' }} onClick={() => navigate('/signup')}>
+            <Icon.rocket width={18} height={18} /> Get started
           </button>
         </div>
       </section>
 
       <footer className="land-foot">
-        ReviewBot — a demo review-collection platform. All messages are simulated locally for demonstration.
+        Revsy — review collection and analysis for local businesses.
       </footer>
     </div>
   );
