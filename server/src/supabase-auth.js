@@ -30,8 +30,8 @@ export function verifyOAuthState(state) {
 }
 
 export function getSupabaseAdmin() {
-  const url = process.env.SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const url = String(process.env.SUPABASE_URL || '').trim();
+  const key = String(process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
   if (!url || !key) throw new Error('Supabase is not configured');
   return createClient(url, key);
 }
@@ -44,8 +44,8 @@ export async function verifySupabaseAccessToken(accessToken) {
 }
 
 export function buildSupabaseGoogleAuthUrl({ redirectTo, state }) {
-  const url = process.env.SUPABASE_URL;
-  const anonKey = process.env.SUPABASE_ANON_KEY;
+  const url = String(process.env.SUPABASE_URL || '').trim();
+  const anonKey = String(process.env.SUPABASE_ANON_KEY || '').trim();
   if (!url || !anonKey) throw new Error('Supabase Auth is not configured (missing SUPABASE_ANON_KEY)');
   const params = new URLSearchParams({
     provider: 'google',
@@ -57,9 +57,11 @@ export function buildSupabaseGoogleAuthUrl({ redirectTo, state }) {
 }
 
 export function getPublicSupabaseConfig() {
+  const supabaseUrl = String(process.env.SUPABASE_URL || '').trim();
+  const supabaseAnonKey = String(process.env.SUPABASE_ANON_KEY || '').trim();
   return {
-    supabaseUrl: process.env.SUPABASE_URL || '',
-    supabaseAnonKey: process.env.SUPABASE_ANON_KEY || '',
-    googleAuthEnabled: !!(process.env.SUPABASE_URL && process.env.SUPABASE_ANON_KEY),
+    supabaseUrl,
+    supabaseAnonKey,
+    googleAuthEnabled: !!(supabaseUrl && supabaseAnonKey),
   };
 }
