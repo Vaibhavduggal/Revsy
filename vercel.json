@@ -6,7 +6,6 @@
     { "source": "/((?!api/.*|assets/.*).*)", "destination": "/index.html" }
   ],
   "crons": [
-    { "path": "/api/cron/sends", "schedule": "* * * * *" },
-    { "path": "/api/cron/weekly", "schedule": "0 2 * * 1" }
+    { "path": "/api/cron/jobs", "schedule": "0 2 * * *" }
   ]
 }

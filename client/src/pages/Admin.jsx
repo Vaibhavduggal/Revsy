@@ -7,7 +7,10 @@ import { Modal } from '../components/Modal.jsx';
 import { useToast } from '../components/useToast.jsx';
 
 function fmtDate(iso) {
-  return new Date(iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
 const STATUS = { trial: { label: 'Trial', cls: 'sent' }, active: { label: 'Active', cls: 'reviewed' }, cancelled: { label: 'Cancelled', cls: 'opened' } };
@@ -155,7 +158,7 @@ function GoogleModal({ biz, onClose, onSaved }) {
 }
 
 export default function Admin() {
-  const { logout } = useAdminAuth();
+  const { logout } = useAdminAuth() || {};
   const navigate = useNavigate();
   const { show, node } = useToast();
   const [tab, setTab] = useState('clients');
@@ -173,7 +176,7 @@ export default function Admin() {
   const load = useCallback(() => {
     setLoading(true);
     adminApi.businesses()
-      .then((r) => setList(r.businesses))
+      .then((r) => setList(Array.isArray(r.businesses) ? r.businesses : []))
       .catch((e) => {
         show(e.message);
         if (String(e.message).toLowerCase().includes('unauthorized')) navigate('/admin/login');
@@ -182,12 +185,12 @@ export default function Admin() {
   }, [show, navigate]);
 
   const loadInvites = useCallback(() => {
-    adminApi.invites().then((r) => setInvites(r.invites)).catch(() => {});
+    adminApi.invites().then((r) => setInvites(Array.isArray(r.invites) ? r.invites : [])).catch(() => {});
   }, []);
 
   const loadRequests = useCallback(() => {
     setReqLoading(true);
-    adminApi.requests().then((r) => setRequests(r.requests)).catch((e) => show(e.message)).finally(() => setReqLoading(false));
+    adminApi.requests().then((r) => setRequests(Array.isArray(r.requests) ? r.requests : [])).catch((e) => show(e.message)).finally(() => setReqLoading(false));
   }, [show]);
 
   useEffect(() => { load(); }, [load]);
@@ -252,7 +255,7 @@ export default function Admin() {
                     <tr key={b.id}>
                       <td><b>{b.name}</b>{b.isDemo && <span className="badge sent sm" style={{ marginLeft: 6 }}>Demo</span>}</td>
                       <td className="muted">{b.ownerEmail}</td>
-                      <td><span className={`badge ${STATUS[b.subscriptionStatus]?.cls || 'sent'}`}>{STATUS[b.subscriptionStatus]?.label || b.subscriptionStatus}</span></td>
+                      <td><span className={`badge ${STATUS[b.subscriptionStatus]?.cls || 'sent'}`}>{STATUS[b.subscriptionStatus]?.label || b.subscriptionStatus || 'Trial'}</span></td>
                       <td>
                         <button className="btn ghost sm" onClick={() => setWaTarget(b)}>
                           {b.whatsapp?.status === 'connected'

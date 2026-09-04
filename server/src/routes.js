@@ -141,7 +141,7 @@ router.post('/login', async (req, res) => {
 
 router.post('/login/demo', async (req, res) => {
   const db = getDb();
-  const { data: bizData } = await db.from('businesses').select('*').eq('is_demo', true).single();
+  const { data: bizData } = await db.from('businesses').select('*').eq('is_demo', true).limit(1).maybeSingle();
   if (!bizData) return res.status(404).json({ error: 'Demo account not available' });
   const business = mapBusiness(bizData);
   const token = newToken();
@@ -489,6 +489,24 @@ router.post('/reviews/summaries/issues/:issueId/read', auth, async (req, res) =>
 });
 
 // Weekly cron: Vercel Cron calls GET /api/cron/weekly with Authorization: Bearer $CRON_SECRET
+router.get('/cron/jobs', async (req, res) => {
+  if (!assertCron(req, res)) return;
+  const sends = await processDueSends().catch((e) => ({ error: e.message }));
+  const db = getDb();
+  const { data: businesses } = await db.from('businesses').select('id').eq('approval_status', 'approved');
+  const weekly = [];
+  for (const row of (businesses || [])) {
+    try {
+      const biz = await getBusiness(row.id);
+      if (biz?.googleConnected) {
+        await syncGoogleReviewsForBusiness(biz, { classifyNegative: classifyOneReview });
+      }
+      weekly.push({ businessId: row.id, ...(await weeklyUpdateBusiness(row.id)) });
+    } catch (e) { weekly.push({ businessId: row.id, error: e.message }); }
+  }
+  res.json({ ok: true, sends, weekly });
+});
+
 router.get('/cron/sends', async (req, res) => {
   if (!assertCron(req, res)) return;
   try {

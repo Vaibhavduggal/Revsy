@@ -25,7 +25,12 @@ async function baseRequest(method, path, body, tokenGetter) {
     body: body ? JSON.stringify(body) : undefined,
   });
   const text = await res.text();
-  const data = text ? JSON.parse(text) : {};
+  let data = {};
+  if (text) {
+    try { data = JSON.parse(text); } catch {
+      throw new Error(res.ok ? 'The server returned an unexpected response' : `Request failed (${res.status})`);
+    }
+  }
   if (!res.ok) {
     throw new Error(data.error || `Request failed (${res.status})`);
   }

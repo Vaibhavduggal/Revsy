@@ -35,7 +35,55 @@ export async function initDb() {
   if (!url || !key) throw new Error('SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set');
   supabase = createClient(url, key);
   await ensurePlatformAdmin();
+  await ensureDemoBusiness();
   return supabase;
+}
+
+async function ensureDemoBusiness() {
+  try {
+    const { data } = await supabase.from('businesses').select('id').eq('is_demo', true).limit(1);
+    const patch = {
+      onboarding_completed: true,
+      approval_status: 'approved',
+      google_connected: true,
+      demo_mode: true,
+    };
+    if (data?.[0]) {
+      const { error } = await supabase.from('businesses').update(patch).eq('id', data[0].id);
+      if (error) console.error('[revsy] ensureDemo update:', error.message);
+      return;
+    }
+    const { error } = await supabase.from('businesses').insert({
+      id: 'biz_1',
+      name: 'Smash Bros',
+      owner_email: 'owner@business.com',
+      password: hashPassword('demo123'),
+      is_demo: true,
+      google_review_link: 'https://g.page/smash-bros-ludhiana/review',
+      feedback_link: '',
+      address: 'SCF 29 F, Bhai Randhir Singh Nagar, Ludhiana, Punjab 141012',
+      phone: '098143 05932',
+      description: 'Smash burger restaurant demo used for live client walkthroughs.',
+      message_template: DEFAULT_TEMPLATE,
+      delay_seconds: 1800,
+      demo_mode: true,
+      subscription_status: 'active',
+      created_at: new Date().toISOString(),
+      place_id: '',
+      whatsapp_bsp: '',
+      whatsapp_api_key: '',
+      whatsapp_phone_number_id: '',
+      whatsapp_status: 'not_connected',
+      reviews_received: 0,
+      google_connected: true,
+      onboarding_completed: true,
+      approval_status: 'approved',
+      pre_approved: true,
+    });
+    if (error) console.error('[revsy] ensureDemo insert:', error.message);
+  } catch (e) {
+    console.error('[revsy] ensureDemo:', e.message);
+  }
 }
 
 async function ensurePlatformAdmin() {

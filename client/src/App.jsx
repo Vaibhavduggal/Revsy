@@ -16,6 +16,7 @@ import Settings from './pages/Settings.jsx';
 import AdminLogin from './pages/AdminLogin.jsx';
 import Admin from './pages/Admin.jsx';
 import Onboarding from './pages/Onboarding.jsx';
+import Demo from './pages/Demo.jsx';
 
 function Protected({ children }) {
   const { business, ready } = useAuth();
@@ -55,14 +56,18 @@ function PublicOnly({ children }) {
 // Admin routes are intentionally isolated from the client business auth above —
 // a client owner's session can never reach these, and vice versa.
 function AdminProtected({ children }) {
-  const { admin, ready } = useAdminAuth();
+  const ctx = useAdminAuth();
+  const admin = ctx?.admin;
+  const ready = ctx?.ready;
   if (!ready) return <div className="empty">Loading…</div>;
   if (!admin) return <Navigate to="/admin/login" replace />;
   return children;
 }
 
 function AdminPublicOnly({ children }) {
-  const { admin, ready } = useAdminAuth();
+  const ctx = useAdminAuth();
+  const admin = ctx?.admin;
+  const ready = ctx?.ready;
   if (!ready) return <div className="empty">Loading…</div>;
   if (admin) return <Navigate to="/admin" replace />;
   return children;
@@ -74,6 +79,7 @@ export default function App() {
       <Route path="/" element={<PublicOnly><Landing /></PublicOnly>} />
       <Route path="/login" element={<PublicOnly><Login /></PublicOnly>} />
       <Route path="/signup" element={<PublicOnly><Signup /></PublicOnly>} />
+      <Route path="/demo" element={<Demo />} />
       <Route path="/onboarding" element={<OnboardingGate><Onboarding /></OnboardingGate>} />
       <Route path="/dashboard" element={<Protected><Dashboard /></Protected>} />
       <Route path="/reviews" element={<Protected><Reviews /></Protected>} />

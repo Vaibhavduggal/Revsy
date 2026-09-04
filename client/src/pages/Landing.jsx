@@ -27,7 +27,7 @@ export default function Landing() {
           <button className="btn" onClick={() => navigate('/signup')}>
             <Icon.rocket width={18} height={18} /> Create a business account
           </button>
-          <button className="btn secondary" onClick={() => navigate('/login')}>Client login</button>
+          <button className="btn secondary" onClick={() => navigate('/demo')}>See live demo</button>
         </div>
       </section>
 

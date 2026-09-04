@@ -265,7 +265,7 @@ export default function Dashboard() {
                   {!iss.is_read && <button className="btn ghost sm" onClick={() => markIssueRead(iss.id)}>Mark as read</button>}
                 </div>
                 <div className="muted" style={{ fontSize: 13, marginTop: 4 }}>Fix: {iss.improvement}</div>
-                <div className="csv-hint">First seen {new Date(iss.first_seen).toLocaleDateString()}</div>
+                <div className="csv-hint">First seen {iss.first_seen ? new Date(iss.first_seen).toLocaleDateString() : '—'}</div>
               </div>
             ))}
           </div>

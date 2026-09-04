@@ -5,7 +5,8 @@ import { Icon, Logo } from '../components/Icons.jsx';
 import { useToast } from '../components/useToast.jsx';
 
 export default function AdminLogin() {
-  const { login } = useAdminAuth();
+  const auth = useAdminAuth();
+  const login = auth?.login;
   const navigate = useNavigate();
   const { show, node } = useToast();
   const [email, setEmail] = useState('');
