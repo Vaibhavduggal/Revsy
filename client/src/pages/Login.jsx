@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth-context.jsx';
 import { Icon, Logo } from '../components/Icons.jsx';
+import GoogleSignIn from '../components/GoogleSignIn.jsx';
 import { useToast } from '../components/useToast.jsx';
 
 export default function Login() {
@@ -13,13 +14,18 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
   const [demoLoading, setDemoLoading] = useState(false);
 
+  const goAfterLogin = (biz) => {
+    if (biz?.onboardingCompleted || biz?.isDemo) navigate('/dashboard');
+    else navigate('/onboarding');
+  };
+
   const submit = async (e) => {
     e.preventDefault();
     setLoading(true);
     try {
       const biz = await login(email, password);
       show(`Welcome back, ${biz.name}!`);
-      navigate('/dashboard');
+      goAfterLogin(biz);
     } catch (err) {
       show(err.message || 'Login failed');
     } finally {
@@ -46,6 +52,15 @@ export default function Login() {
         <div className="brand" style={{ justifyContent: 'center', marginBottom: 8 }}><Logo /><span>Revsy</span></div>
         <h2 style={{ textAlign: 'center', fontSize: 22 }}>Business login</h2>
         <p className="sub" style={{ textAlign: 'center', marginBottom: 18 }}>Sign in to your review dashboard</p>
+
+        <GoogleSignIn label="Continue with Google" onError={show} />
+
+        <div className="flex" style={{ alignItems: 'center', gap: 10, margin: '16px 0' }}>
+          <div style={{ flex: 1, height: 1, background: 'var(--line)' }} />
+          <span className="csv-hint">or email</span>
+          <div style={{ flex: 1, height: 1, background: 'var(--line)' }} />
+        </div>
+
         <form onSubmit={submit}>
           <div className="field">
             <label>Email</label>

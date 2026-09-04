@@ -16,6 +16,7 @@ import Settings from './pages/Settings.jsx';
 import AdminLogin from './pages/AdminLogin.jsx';
 import Admin from './pages/Admin.jsx';
 import Onboarding from './pages/Onboarding.jsx';
+import AuthCallback from './pages/AuthCallback.jsx';
 import Demo from './pages/Demo.jsx';
 
 function Protected({ children }) {
@@ -80,6 +81,7 @@ export default function App() {
       <Route path="/login" element={<PublicOnly><Login /></PublicOnly>} />
       <Route path="/signup" element={<PublicOnly><Signup /></PublicOnly>} />
       <Route path="/demo" element={<Demo />} />
+      <Route path="/auth/callback" element={<AuthCallback />} />
       <Route path="/onboarding" element={<OnboardingGate><Onboarding /></OnboardingGate>} />
       <Route path="/dashboard" element={<Protected><Dashboard /></Protected>} />
       <Route path="/reviews" element={<Protected><Reviews /></Protected>} />

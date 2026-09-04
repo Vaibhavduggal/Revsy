@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../auth-context.jsx';
 import { Logo } from '../components/Icons.jsx';
+import GoogleSignIn from '../components/GoogleSignIn.jsx';
 import { useToast } from '../components/useToast.jsx';
 
 export default function Signup() {
@@ -33,6 +34,15 @@ export default function Signup() {
         <div className="brand" style={{ justifyContent: 'center', marginBottom: 8 }}><Logo /><span>Revsy</span></div>
         <h2 style={{ textAlign: 'center', fontSize: 22 }}>Create your account</h2>
         <p className="sub" style={{ textAlign: 'center', marginBottom: 18 }}>Start collecting Google reviews on autopilot</p>
+
+        <GoogleSignIn businessName={businessName} label="Sign up with Google" onError={show} />
+
+        <div className="flex" style={{ alignItems: 'center', gap: 10, margin: '16px 0' }}>
+          <div style={{ flex: 1, height: 1, background: 'var(--line)' }} />
+          <span className="csv-hint">or email</span>
+          <div style={{ flex: 1, height: 1, background: 'var(--line)' }} />
+        </div>
+
         <form onSubmit={submit}>
           <div className="field">
             <label>Business name</label>

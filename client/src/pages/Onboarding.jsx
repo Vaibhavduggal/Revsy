@@ -102,9 +102,13 @@ export default function Onboarding() {
   if (status?.approvalStatus === 'pending_approval' && status?.googleConnected && !status?.needsLocation) {
     return (
       <div className="page" style={{ maxWidth: 640 }}>
-        <div className="card" style={{ textAlign: 'center', padding: 40 }}>
-          <h3>Waiting for approval</h3>
-          <div className="sub" style={{ marginTop: 8 }}>Your Google Business Profile is connected. Revsy will unlock WhatsApp setup automatically once the owner accepts your request — no refresh needed.</div>
+        <div className="card" style={{ textAlign: 'center', padding: 40, borderLeft: '4px solid var(--accent)' }}>
+          <h3>Waiting for admin approval</h3>
+          <div className="sub" style={{ marginTop: 8 }}>
+            Your Google account and review permissions are connected. The Revsy platform owner still needs to approve your restaurant before WhatsApp setup unlocks.
+          </div>
+          <div className="pill" style={{ marginTop: 16, display: 'inline-block' }}>Checking every few seconds…</div>
+          <div className="csv-hint" style={{ marginTop: 12 }}>Connected as {status.googleAccountEmail || 'your Google account'}</div>
         </div>
         {node}
       </div>

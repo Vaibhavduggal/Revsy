@@ -1,9 +1,11 @@
 import { Router } from 'express';
+import crypto from 'crypto';
 import { getDb, getBusiness, renderTemplate, hashPassword, verifyPassword, newToken, defaultTemplate, mapBusiness, mapCustomer, mapRequest, mapReview, mapReviewSummary, mapFeedback, mapPendingSend, mapActivity } from './db.js';
 import { auth, adminAuth, recordActivity, publicBusiness } from './auth.js';
 import { enqueueSend, retrySend, getFailedSends, processDueSends } from './queue.js';
 import { classifyOneReview, weeklyUpdateBusiness, getCurrentSummaryRow, issuesFromRow, runFirstClusteringForBusiness } from './ai.js';
 import { listGoogleLocations, saveSelectedLocation, autoSelectLocationIfSingle, syncGoogleReviewsForBusiness } from './google.js';
+import { buildSupabaseGoogleAuthUrl, getPublicSupabaseConfig, signOAuthState, verifyOAuthState, verifySupabaseAccessToken } from './supabase-auth.js';
 
 const router = Router();
 
@@ -155,6 +157,94 @@ router.post('/logout', auth, async (req, res) => {
   const token = header.startsWith('Bearer ') ? header.slice(7) : '';
   await db.from('sessions').delete().eq('token', token);
   res.json({ ok: true });
+});
+
+router.get('/config/public', (_req, res) => {
+  res.json(getPublicSupabaseConfig());
+});
+
+router.get('/auth/supabase/google', (req, res) => {
+  try {
+    const businessName = req.query.businessName ? String(req.query.businessName).trim() : '';
+    const frontendBase = String(process.env.FRONTEND_URL || '').replace(/\/$/, '')
+      || (req.headers.origin ? String(req.headers.origin).replace(/\/$/, '') : '');
+    if (!frontendBase) return res.status(500).json({ error: 'FRONTEND_URL is not configured' });
+    const oauthState = signOAuthState({ businessName, ts: Date.now() });
+    const redirectTo = `${frontendBase}/auth/callback?state=${encodeURIComponent(oauthState)}`;
+    const url = buildSupabaseGoogleAuthUrl({ redirectTo, state: oauthState });
+    res.redirect(url);
+  } catch (e) {
+    res.status(500).json({ error: e.message || 'Supabase Google login is not configured' });
+  }
+});
+
+router.post('/auth/supabase', async (req, res) => {
+  const { accessToken, businessName, oauthState } = req.body || {};
+  if (!accessToken) return res.status(400).json({ error: 'accessToken is required' });
+  const stateData = oauthState ? verifyOAuthState(oauthState) : null;
+  const user = await verifySupabaseAccessToken(accessToken);
+  if (!user?.email) return res.status(401).json({ error: 'Invalid Google session' });
+
+  const email = String(user.email).trim().toLowerCase();
+  const db = getDb();
+  const { data: existingBiz } = await db.from('businesses').select('*').eq('owner_email', email).maybeSingle();
+
+  let businessId;
+  if (existingBiz) {
+    businessId = existingBiz.id;
+  } else {
+    const nameFromState = stateData?.businessName || businessName;
+    const name = nameFromState?.trim()
+      || user.user_metadata?.business_name
+      || user.user_metadata?.full_name
+      || email.split('@')[0];
+    const { data: invite } = await db.from('invited_emails').select('*').eq('email', email).eq('used', false).maybeSingle();
+    const preApproved = !!invite;
+    if (invite) await db.from('invited_emails').update({ used: true }).eq('id', invite.id);
+    businessId = newId('biz');
+    await db.from('businesses').insert({
+      id: businessId,
+      name,
+      owner_email: email,
+      password: hashPassword(crypto.randomBytes(32).toString('hex')),
+      is_demo: false,
+      google_review_link: '',
+      feedback_link: '',
+      address: '',
+      phone: '',
+      description: '',
+      message_template: defaultTemplate,
+      delay_seconds: 1800,
+      demo_mode: false,
+      subscription_status: 'trial',
+      created_at: new Date().toISOString(),
+      reviews_received: 0,
+      place_id: '',
+      whatsapp_bsp: '',
+      whatsapp_api_key: '',
+      whatsapp_phone_number_id: '',
+      whatsapp_status: 'not_connected',
+      google_access_token: null,
+      google_refresh_token: null,
+      google_token_expires_at: null,
+      google_connected: false,
+      google_account_email: null,
+      onboarding_completed: false,
+      approval_status: 'pending_approval',
+      pre_approved: preApproved,
+      approved_at: null,
+      rejected_at: null,
+    });
+  }
+
+  const business = await getBusiness(businessId);
+  const token = newToken();
+  await db.from('sessions').insert({ token, business_id: businessId, created_at: new Date().toISOString() });
+  res.json({
+    token,
+    business: publicBusiness(business),
+    startGbpOAuth: !business.googleConnected,
+  });
 });
 
 router.post('/admin/login', async (req, res) => {
@@ -663,7 +753,7 @@ router.get('/activity', auth, async (req, res) => {
 
 router.get('/settings', auth, (req, res) => {
   const b = req.business;
-  res.json({ businessName: b.name, googleReviewLink: b.googleReviewLink, feedbackLink: b.feedbackLink, messageTemplate: b.messageTemplate, delaySeconds: b.delaySeconds, demoMode: b.demoMode, reviewsReceived: b.reviewsReceived || 0, placeId: b.placeId || '', whatsappStatus: b.whatsapp?.status || 'not_connected', whatsappBsp: b.whatsapp?.bsp || '', whatsappCampaignName: b.whatsapp?.campaignName || '', onboardingCompleted: !!b.onboardingCompleted, isDemo: !!b.isDemo, googleConnected: !!b.googleConnected });
+  res.json({ businessId: b.id, businessName: b.name, googleReviewLink: b.googleReviewLink, feedbackLink: b.feedbackLink, messageTemplate: b.messageTemplate, delaySeconds: b.delaySeconds, demoMode: b.demoMode, reviewsReceived: b.reviewsReceived || 0, placeId: b.placeId || '', whatsappStatus: b.whatsapp?.status || 'not_connected', whatsappBsp: b.whatsapp?.bsp || '', whatsappCampaignName: b.whatsapp?.campaignName || '', onboardingCompleted: !!b.onboardingCompleted, isDemo: !!b.isDemo, googleConnected: !!b.googleConnected, approvalStatus: b.approvalStatus || 'pending_approval' });
 });
 
 router.put('/settings', auth, async (req, res) => {

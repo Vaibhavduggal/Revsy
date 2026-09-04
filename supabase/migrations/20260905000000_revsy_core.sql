@@ -70,7 +70,7 @@ alter table public.businesses add column if not exists google_account_email text
 alter table public.businesses add column if not exists google_access_token text;
 alter table public.businesses add column if not exists google_refresh_token text;
 alter table public.businesses add column if not exists google_token_expires_at timestamptz;
-alter table public.businesses add column if not exists onboarding_completed boolean not null default false;
+alter table public.businesses add column if not exists auth_user_id uuid unique;
 
 create table if not exists public.sessions (
   token text primary key,

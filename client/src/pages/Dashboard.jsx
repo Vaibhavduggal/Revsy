@@ -3,7 +3,6 @@ import { Link } from 'react-router-dom';
 import { api } from '../api.js';
 import { useAuth } from '../auth-context.jsx';
 import { Icon } from '../components/Icons.jsx';
-import { Modal } from '../components/Modal.jsx';
 import { useToast } from '../components/useToast.jsx';
 
 function StatusBadge({ status }) {
@@ -24,8 +23,9 @@ function QuickAdd({ onAdded }) {
     setBusy(true);
     try {
       await api.addCustomer(name.trim(), phone.trim());
-      show(`Added ${name.trim()} — review request scheduled (uses your Settings delay)`);
-      setName(''); setPhone('');
+      show(`Added ${name.trim()} — review request scheduled`);
+      setName('');
+      setPhone('');
       setOpen(false);
       onAdded();
     } catch (err) {
@@ -35,34 +35,29 @@ function QuickAdd({ onAdded }) {
     }
   };
 
-  return (
-    <>
+  if (!open) {
+    return (
       <button className="btn" onClick={() => setOpen(true)}>
         <Icon.plus width={16} height={16} /> Add customer
       </button>
-      {open && (
-        <Modal title="Add customer" sub="Name + phone. A WhatsApp review request is scheduled via the queue using your Settings delay." onClose={() => setOpen(false)}>
-          <form onSubmit={add}>
-            <div className="field">
-              <label>Customer name</label>
-              <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Rahul Sharma" autoFocus />
-            </div>
-            <div className="field">
-              <label>Phone number</label>
-              <input className="input" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+91 98xxx xxxxx" />
-            </div>
-            <div className="modal-actions">
-              <button type="button" className="btn secondary" onClick={() => setOpen(false)}>Cancel</button>
-              <button type="submit" className="btn" disabled={busy}>{busy ? 'Adding…' : 'Add & schedule'}</button>
-            </div>
-          </form>
-        </Modal>
-      )}
-    </>
+    );
+  }
+
+  return (
+    <div className="card" style={{ padding: 16, marginBottom: 0 }}>
+      <form onSubmit={add} className="flex col" style={{ gap: 10 }}>
+        <b style={{ fontSize: 15 }}>Quick add customer</b>
+        <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Customer name" autoFocus />
+        <input className="input" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Phone (+91…)" />
+        <div className="flex" style={{ gap: 8 }}>
+          <button type="button" className="btn secondary" onClick={() => setOpen(false)}>Cancel</button>
+          <button type="submit" className="btn" disabled={busy}>{busy ? 'Adding…' : 'Add & schedule'}</button>
+        </div>
+      </form>
+    </div>
   );
 }
 
-// Grouped positive vs negative over time (green/red)
 function PnChart({ weeks }) {
   const data = (weeks || []).slice(-12);
   const max = Math.max(1, ...data.map((w) => Math.max(w.positive || 0, w.negative || 0, w.count || 0)));
@@ -89,17 +84,17 @@ function timeAgo(iso) {
   if (m < 60) return `${m}m ago`;
   const h = Math.floor(m / 60);
   if (h < 24) return `${h}h ago`;
-  const d = Math.floor(h / 24);
-  return `${d}d ago`;
+  return `${Math.floor(h / 24)}d ago`;
 }
 
 function ReviewCard({ r, negative, onRead }) {
   const unread = r.isRead === false;
   return (
     <div style={{
-      borderBottom: '1px solid var(--line)', paddingBottom: 10,
+      borderBottom: '1px solid var(--line)',
       background: unread ? 'var(--accent-soft)' : 'transparent',
-      borderRadius: 8, padding: unread ? 8 : '0 0 10px 0',
+      borderRadius: 8,
+      padding: unread ? 8 : '0 0 10px 0',
     }}>
       <div className="flex between">
         <b style={{ fontSize: 13, fontWeight: unread ? 800 : 600 }}>
@@ -107,18 +102,18 @@ function ReviewCard({ r, negative, onRead }) {
           {r.customerName}
         </b>
         <span style={{ color: negative ? 'var(--warn)' : 'var(--ok)', fontWeight: 700, fontSize: 13 }}>
-          {r.rating ? '★'.repeat(r.rating) : <span className="badge opened sm">Private feedback</span>}
+          {r.rating ? '★'.repeat(r.rating) : <span className="badge opened sm">Private</span>}
         </span>
       </div>
-      {r.text && <div className="muted" style={{ fontSize: 13, marginTop: 4, fontWeight: unread ? 600 : 400 }}>{r.text}</div>}
+      {r.text && <div className="muted" style={{ fontSize: 13, marginTop: 4 }}>{r.text}</div>}
       <div className="flex between" style={{ marginTop: 4 }}>
         <div className="csv-hint" style={{ marginTop: 0 }}>
           {r.source === 'google' ? 'Google' : 'Internal'} · {timeAgo(r.createdAt)}
-          {r.aiFlag === 'repeated' && <span className="badge opened sm" style={{ marginLeft: 6 }}>Repeated issue</span>}
+          {r.aiFlag === 'repeated' && <span className="badge opened sm" style={{ marginLeft: 6 }}>Repeated</span>}
           {r.aiFlag === 'new_issue' && <span className="badge reviewed sm" style={{ marginLeft: 6 }}>New issue</span>}
         </div>
         {unread && r.id && !String(r.id).startsWith('fb_') && (
-          <button className="btn ghost sm" onClick={() => onRead(r.id)}>Mark as read</button>
+          <button className="btn ghost sm" onClick={() => onRead(r.id)}>Mark read</button>
         )}
       </div>
     </div>
@@ -126,15 +121,13 @@ function ReviewCard({ r, negative, onRead }) {
 }
 
 export default function Dashboard() {
-  const { business, setBusiness } = useAuth();
+  const { business } = useAuth();
   const { show, node } = useToast();
   const [data, setData] = useState(null);
   const [analytics, setAnalytics] = useState(null);
-  const [sentiment, setSentiment] = useState(null);
   const [failed, setFailed] = useState([]);
   const [retrying, setRetrying] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [logOpen, setLogOpen] = useState(false);
   const [reviewList, setReviewList] = useState({ positive: [], negative: [] });
   const [summaries, setSummaries] = useState(null);
   const [syncing, setSyncing] = useState(false);
@@ -142,11 +135,14 @@ export default function Dashboard() {
   const load = useCallback(async () => {
     try {
       const [d, an, f, rl, sm] = await Promise.all([
-        api.dashboard(), api.analytics(), api.failedSends(), api.reviewsList(), api.summaries().catch(() => ({ current: null })),
+        api.dashboard(),
+        api.analytics(),
+        api.failedSends(),
+        api.reviewsList(),
+        api.summaries().catch(() => ({ current: null })),
       ]);
       setData(d);
       setAnalytics(an);
-      setSentiment(an.sentiment);
       setFailed(f.failed || []);
       setReviewList(rl);
       setSummaries(sm.current || null);
@@ -173,40 +169,16 @@ export default function Dashboard() {
     try {
       await api.markIssueRead(issueId);
       setSummaries((s) => (s ? { ...s, issues: (s.issues || []).map((i) => (i.id === issueId ? { ...i, is_read: true } : i)) } : s));
-      show('Marked as read');
     } catch (e) { show(e.message); }
   };
 
-  const inc = async () => {
-    const r = await api.incrementReviews();
-    setData((d) => ({ ...d, stats: { ...d.stats, totalReceived: r.reviewsReceived, conversionRate: d.stats.totalSent ? Math.round((r.reviewsReceived / d.stats.totalSent) * 1000) / 10 : 0 } }));
-    setBusiness((b) => ({ ...b, reviewsReceived: r.reviewsReceived }));
-  };
-  const dec = async () => {
-    const r = await api.decrementReviews();
-    setData((d) => ({ ...d, stats: { ...d.stats, totalReceived: r.reviewsReceived, conversionRate: d.stats.totalSent ? Math.round((r.reviewsReceived / d.stats.totalSent) * 1000) / 10 : 0 } }));
-    setBusiness((b) => ({ ...b, reviewsReceived: r.reviewsReceived }));
-  };
-  const retry = async (id) => {
-    setRetrying(id);
-    try {
-      await api.retrySend(id);
-      show('Retry sent');
-      setFailed((list) => list.filter((x) => x.id !== id));
-    } catch (err) {
-      show(err.message);
-    } finally {
-      setRetrying(null);
-    }
-  };
   const syncGoogle = async () => {
     setSyncing(true);
     try {
       const r = await api.syncGoogleReviews();
-      if (!r.connected) {
-        show(r.message || 'Google Reviews is not connected yet.');
-      } else {
-        show(`Synced — ${r.added} new review${r.added === 1 ? '' : 's'} pulled from Google`);
+      if (!r.connected) show(r.message || 'Connect Google in Settings first.');
+      else {
+        show(`Synced — ${r.added} new review${r.added === 1 ? '' : 's'}`);
         load();
       }
     } catch (err) {
@@ -216,122 +188,130 @@ export default function Dashboard() {
     }
   };
 
+  const retry = async (id) => {
+    setRetrying(id);
+    try {
+      await api.retrySend(id);
+      show('Retry queued');
+      setFailed((list) => list.filter((x) => x.id !== id));
+    } catch (err) {
+      show(err.message);
+    } finally {
+      setRetrying(null);
+    }
+  };
+
   if (loading || !data) return <div className="page"><div className="empty">Loading dashboard…</div></div>;
 
-  const { stats, weekly, recent } = data;
-  const chartWeeks = analytics?.weeks || weekly;
+  const { stats, recent } = data;
+  const chartWeeks = analytics?.weeks || data.weekly;
   const issues = summaries?.issues || [];
+  const unreadPos = reviewList.positive.filter((r) => r.isRead === false).length;
+  const unreadNeg = reviewList.negative.filter((r) => r.isRead === false).length;
 
   return (
     <div className="page">
       <div className="page-head">
         <div>
           <h1>Dashboard</h1>
-          <div className="sub">Welcome back, {business?.name}. Here's how your review engine is performing.</div>
+          <div className="sub">{business?.name} · review requests, Google sync, and AI issue tracking</div>
         </div>
-        <div className="flex" style={{ gap: 8 }}>
-          <Link className="btn secondary" to="/reviews">All reviews</Link>
-          <QuickAdd onAdded={load} />
+        <div className="flex" style={{ gap: 8, flexWrap: 'wrap' }}>
+          <Link className="btn secondary sm" to="/customers">Customers</Link>
+          <Link className="btn secondary sm" to="/reviews">All reviews</Link>
+          <button className="btn ghost sm" onClick={syncGoogle} disabled={syncing}>
+            <Icon.star width={13} height={13} /> {syncing ? 'Syncing…' : 'Sync Google'}
+          </button>
         </div>
       </div>
 
-      <div className="card" style={{ marginBottom: 16 }}>
-        <h3>Positive vs negative over time</h3>
-        <div className="sub">Last 12 weeks · <span style={{ color: 'var(--ok)', fontWeight: 700 }}>green = positive (4★+)</span> · <span style={{ color: 'var(--warn)', fontWeight: 700 }}>red = negative (&lt;4★)</span></div>
-        <div className="spacer" />
-        <PnChart weeks={chartWeeks} />
-      </div>
-
-      <div className="card" style={{ marginBottom: 16, borderLeft: '4px solid var(--accent)' }}>
-        <div className="flex between">
-          <div>
-            <h3>AI Insights</h3>
-            <div className="sub">Distinct recurring issues from negative Google reviews. Repeated reports increment the count — they are not treated as new.</div>
-          </div>
-          <span className="badge sent sm">{issues.length} issues</span>
-        </div>
-        <div className="spacer" />
-        {issues.length === 0 ? (
-          <div className="empty">No issues identified yet. They appear after approval once negative reviews are analyzed.</div>
-        ) : (
-          <div className="flex col" style={{ gap: 10 }}>
-            {issues.map((iss) => (
-              <div key={iss.id} style={{ border: '1px solid var(--line)', borderRadius: 10, padding: 12, background: iss.is_read ? '#fff' : 'var(--accent-soft)' }}>
-                <div className="flex between">
-                  <b style={{ fontWeight: iss.is_read ? 600 : 800 }}>
-                    {!iss.is_read && <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: 'var(--warn)', marginRight: 6 }} />}
-                    {iss.theme} — reported {iss.occurrences || 1} time{(iss.occurrences || 1) === 1 ? '' : 's'}
-                  </b>
-                  {!iss.is_read && <button className="btn ghost sm" onClick={() => markIssueRead(iss.id)}>Mark as read</button>}
-                </div>
-                <div className="muted" style={{ fontSize: 13, marginTop: 4 }}>Fix: {iss.improvement}</div>
-                <div className="csv-hint">First seen {iss.first_seen ? new Date(iss.first_seen).toLocaleDateString() : '—'}</div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      <div className="stat-grid">
+      <div className="stat-grid" style={{ marginBottom: 16 }}>
         <div className="stat accent">
           <div className="icon"><Icon.send width={20} height={20} /></div>
-          <div className="label">Review requests sent</div>
+          <div className="label">Requests sent</div>
           <div className="value">{stats.totalSent}</div>
         </div>
         <div className="stat">
           <div className="icon"><Icon.star width={20} height={20} /></div>
           <div className="label">Reviews received</div>
           <div className="value">{stats.totalReceived}</div>
-          {business?.isDemo && (
-            <span className="flex" style={{ gap: 2, marginTop: 8 }}>
-              <button className="btn secondary sm" onClick={dec} style={{ padding: '2px 8px' }}>−</button>
-              <button className="btn green sm" onClick={inc} style={{ padding: '2px 8px' }}>+</button>
-            </span>
-          )}
         </div>
         <div className="stat">
           <div className="icon"><Icon.rocket width={20} height={20} /></div>
-          <div className="label">Conversion rate</div>
+          <div className="label">Conversion</div>
           <div className="value">{stats.conversionRate}%</div>
         </div>
         <div className="stat">
           <div className="icon"><Icon.users width={20} height={20} /></div>
-          <div className="label">Avg / week</div>
-          <div className="value">{Math.round(stats.totalSent / 8)}</div>
+          <div className="label">Unread reviews</div>
+          <div className="value">{unreadPos + unreadNeg}</div>
         </div>
       </div>
 
-      <div className="row even" style={{ marginTop: 16 }}>
-        <div className="card" style={{ borderTop: '3px solid var(--ok)' }}>
-          <div className="flex between" style={{ alignItems: 'flex-start' }}>
-            <div>
-              <h3 style={{ color: 'var(--ok)' }}>Recent positive reviews</h3>
-              <div className="sub">4★ and above · {reviewList.positive.length} total · <Link to="/reviews" style={{ color: 'var(--ok)', fontWeight: 700 }}>view all</Link></div>
+      <div className="row even" style={{ marginBottom: 16, alignItems: 'start' }}>
+        <div className="card">
+          <QuickAdd onAdded={load} />
+        </div>
+        <div className="card" style={{ borderLeft: '4px solid var(--accent)' }}>
+          <div className="flex between">
+            <h3>AI insights</h3>
+            <span className="badge sent sm">{issues.length} issues</span>
+          </div>
+          <div className="sub">Recurring problems from negative Google reviews</div>
+          <div className="spacer" />
+          {issues.length === 0 ? (
+            <div className="empty">No issues yet — they appear after negative reviews are analyzed.</div>
+          ) : (
+            <div className="flex col" style={{ gap: 8, maxHeight: 220, overflowY: 'auto' }}>
+              {issues.slice(0, 4).map((iss) => (
+                <div key={iss.id} style={{ border: '1px solid var(--line)', borderRadius: 10, padding: 10, background: iss.is_read ? '#fff' : 'var(--accent-soft)' }}>
+                  <div className="flex between">
+                    <b style={{ fontSize: 13 }}>{iss.theme} · {iss.occurrences || 1}×</b>
+                    {!iss.is_read && <button className="btn ghost sm" onClick={() => markIssueRead(iss.id)}>Read</button>}
+                  </div>
+                  <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>{iss.improvement}</div>
+                </div>
+              ))}
             </div>
-            <button className="btn ghost sm" onClick={syncGoogle} disabled={syncing}>
-              <Icon.star width={13} height={13} /> {syncing ? 'Syncing…' : 'Sync Google Reviews'}
-            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="card" style={{ marginBottom: 16 }}>
+        <h3>Positive vs negative · last 12 weeks</h3>
+        <div className="sub"><span style={{ color: 'var(--ok)', fontWeight: 700 }}>Green</span> = 4★+ · <span style={{ color: 'var(--warn)', fontWeight: 700 }}>Red</span> = below 4★</div>
+        <div className="spacer" />
+        <PnChart weeks={chartWeeks} />
+      </div>
+
+      <div className="row even" style={{ marginBottom: 16 }}>
+        <div className="card" style={{ borderTop: '3px solid var(--ok)' }}>
+          <div className="flex between">
+            <h3 style={{ color: 'var(--ok)' }}>Positive reviews</h3>
+            {unreadPos > 0 && <span className="badge reviewed sm">{unreadPos} unread</span>}
           </div>
           <div className="spacer" />
           {reviewList.positive.length === 0 ? (
             <div className="empty">No positive reviews yet.</div>
           ) : (
-            <div className="flex col" style={{ gap: 10, maxHeight: 320, overflowY: 'auto' }}>
-              {reviewList.positive.slice(0, 8).map((r) => (
+            <div className="flex col" style={{ gap: 10, maxHeight: 300, overflowY: 'auto' }}>
+              {reviewList.positive.slice(0, 6).map((r) => (
                 <ReviewCard key={r.id} r={r} negative={false} onRead={markRead} />
               ))}
             </div>
           )}
         </div>
         <div className="card" style={{ borderTop: '3px solid var(--warn)' }}>
-          <h3 style={{ color: 'var(--warn)' }}>Recent negative reviews</h3>
-          <div className="sub">Below 4★ · kept private · {reviewList.negative.length} total · <Link to="/reviews" style={{ color: 'var(--warn)', fontWeight: 700 }}>view all</Link></div>
+          <div className="flex between">
+            <h3 style={{ color: 'var(--warn)' }}>Negative reviews</h3>
+            {unreadNeg > 0 && <span className="badge opened sm">{unreadNeg} unread</span>}
+          </div>
           <div className="spacer" />
           {reviewList.negative.length === 0 ? (
             <div className="empty">No negative feedback yet.</div>
           ) : (
-            <div className="flex col" style={{ gap: 10, maxHeight: 320, overflowY: 'auto' }}>
-              {reviewList.negative.slice(0, 8).map((r) => (
+            <div className="flex col" style={{ gap: 10, maxHeight: 300, overflowY: 'auto' }}>
+              {reviewList.negative.slice(0, 6).map((r) => (
                 <ReviewCard key={r.id} r={r} negative onRead={markRead} />
               ))}
             </div>
@@ -339,12 +319,12 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <div className="card mb" style={{ marginTop: 16 }}>
-        <h3>Most recent review requests</h3>
-        <div className="sub">Latest 10</div>
+      <div className="card">
+        <h3>Recent review requests</h3>
+        <div className="sub">Latest WhatsApp review asks</div>
         <div className="spacer" />
         {recent.length === 0 ? (
-          <div className="empty">No requests yet.</div>
+          <div className="empty">No requests yet — add a customer to get started.</div>
         ) : (
           <table className="table">
             <thead>
@@ -363,24 +343,22 @@ export default function Dashboard() {
           </table>
         )}
       </div>
+
       {failed.length > 0 && (
-        <div className="card mb" style={{ marginTop: 16, borderColor: 'var(--warn)' }}>
-          <h3><span className="dot neg" /> Failed sends ({failed.length})</h3>
-          <div className="spacer" />
-          <table className="table">
+        <div className="card" style={{ marginTop: 16, borderColor: 'var(--warn)' }}>
+          <h3>Failed WhatsApp sends ({failed.length})</h3>
+          <table className="table" style={{ marginTop: 12 }}>
             <thead>
-              <tr><th>Customer</th><th>Phone</th><th>Error</th><th>Tries</th><th></th></tr>
+              <tr><th>Customer</th><th>Error</th><th></th></tr>
             </thead>
             <tbody>
               {failed.map((f) => (
                 <tr key={f.id}>
-                  <td><b>{f.customerName}</b></td>
-                  <td className="muted">{f.phone}</td>
+                  <td><b>{f.customerName}</b><div className="muted">{f.phone}</div></td>
                   <td className="muted">{f.error}</td>
-                  <td>{f.retryCount}</td>
                   <td>
                     <button className="btn secondary sm" disabled={retrying === f.id} onClick={() => retry(f.id)}>
-                      {retrying === f.id ? 'Retrying…' : 'Retry'}
+                      {retrying === f.id ? '…' : 'Retry'}
                     </button>
                   </td>
                 </tr>
@@ -388,40 +366,6 @@ export default function Dashboard() {
             </tbody>
           </table>
         </div>
-      )}
-      {logOpen && (
-        <Modal title="Log a review" sub="Manually add a review (e.g. from Google before the API is connected)." onClose={() => setLogOpen(false)}>
-          <form onSubmit={async (e) => {
-            e.preventDefault();
-            const name = e.target.customerName.value.trim();
-            const rating = Number(e.target.rating.value) || 5;
-            try {
-              await api.addReview({ customerName: name || null, rating });
-              show('Review logged');
-              setLogOpen(false);
-              load();
-            } catch (err) { show(err.message); }
-          }}>
-            <div className="field">
-              <label>Customer name (optional)</label>
-              <input className="input" name="customerName" placeholder="Leave blank for anonymous" />
-            </div>
-            <div className="field">
-              <label>Star rating</label>
-              <select className="select" name="rating" defaultValue="5">
-                <option value="5">5 ★</option>
-                <option value="4">4 ★</option>
-                <option value="3">3 ★</option>
-                <option value="2">2 ★</option>
-                <option value="1">1 ★</option>
-              </select>
-            </div>
-            <div className="modal-actions">
-              <button type="button" className="btn secondary" onClick={() => setLogOpen(false)}>Cancel</button>
-              <button type="submit" className="btn">Log review</button>
-            </div>
-          </form>
-        </Modal>
       )}
       {node}
     </div>

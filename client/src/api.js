@@ -41,6 +41,7 @@ const request = (method, path, body) => baseRequest(method, path, body, getToken
 const adminRequest = (method, path, body) => baseRequest(method, path, body, getAdminToken);
 
 export const api = {
+  authSupabase: (payload) => request('POST', '/auth/supabase', payload),
   login: (email, password) => request('POST', '/login', { email, password }),
   demoLogin: () => request('POST', '/login/demo'),
   signup: (email, password, businessName) => request('POST', '/signup', { email, password, businessName }),
