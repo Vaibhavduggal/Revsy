@@ -13,5 +13,8 @@
     "build": "npm run build --workspace=client",
     "start:local": "npm run build && node server/src/server.js",
     "test:local": "echo 'Run: npm install && npm run dev, then visit http://localhost:4000'"
+  },
+  "devDependencies": {
+    "playwright": "^1.62.1"
   }
 }

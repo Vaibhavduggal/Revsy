@@ -304,7 +304,7 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <div className="row two" style={{ marginTop: 16 }}>
+      <div className="row even" style={{ marginTop: 16 }}>
         <div className="card" style={{ borderTop: '3px solid var(--ok)' }}>
           <div className="flex between" style={{ alignItems: 'flex-start' }}>
             <div>
