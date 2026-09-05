@@ -78,9 +78,52 @@ export function sentimentGateMessage(copy, { name, businessName }) {
   return `Hi ${who}, thanks for ${copy.visitGerund} ${biz} today! How was your experience? 😊 or 😞\nReply 1 for 😊, 2 for 😞`;
 }
 
+export function defaultMessageTemplates(category) {
+  return {
+    gate: `Hi {{customer_name}}! Thanks for {{visit_verb}} {{business_name}} today 🙏 How was your experience?\n\n😊 Great!\n😞 Not great`,
+    happyFollowup:
+      'Awesome to hear! Got any suggestions for us, or should we just say thanks? 🙌\nReply "nothing, you\'re awesome" or tell us what you\'d like to see improved.',
+    googleAsk:
+      'That means a lot to us! Would you mind dropping us a quick Google review? It takes less than a minute and really helps us out 🙏\n{{google_review_link}}',
+    sadFollowup:
+      'Sorry to hear that. Please tell us what went wrong so we can make it right — this goes straight to the owner, not anywhere public.',
+  };
+}
+
 export function defaultTemplateFor(category) {
-  const copy = getCopy(category);
-  return `Hi [customer name], thanks for ${copy.visitGerund} [business name] today! How was your experience? 😊 or 😞\nReply 1 for 😊, 2 for 😞`;
+  return defaultMessageTemplates(category).gate;
+}
+
+export function resolveMessageTemplates(business) {
+  const defaults = defaultMessageTemplates(business?.category);
+  const stored = business?.messageTemplates && typeof business.messageTemplates === 'object'
+    ? business.messageTemplates
+    : {};
+  const gate = (business?.messageTemplate && String(business.messageTemplate).trim())
+    || (stored.gate && String(stored.gate).trim())
+    || defaults.gate;
+  return {
+    gate,
+    happyFollowup: (stored.happyFollowup && String(stored.happyFollowup).trim()) || defaults.happyFollowup,
+    googleAsk: (stored.googleAsk && String(stored.googleAsk).trim()) || defaults.googleAsk,
+    sadFollowup: (stored.sadFollowup && String(stored.sadFollowup).trim()) || defaults.sadFollowup,
+  };
+}
+
+export function renderBusinessTemplate(template, business, customer) {
+  const copy = getCopy(business?.category);
+  const name = customer?.name || 'there';
+  const biz = business?.name || 'us';
+  const link = business?.googleReviewLink || '';
+  const verb = copy.visitGerund;
+  return String(template || '')
+    .replaceAll('{{customer_name}}', name)
+    .replaceAll('{{business_name}}', biz)
+    .replaceAll('{{google_review_link}}', link)
+    .replaceAll('{{visit_verb}}', verb)
+    .replaceAll('[customer name]', name)
+    .replaceAll('[business name]', biz)
+    .replaceAll('[google review link]', link);
 }
 
 export function messagePresetsFor(category) {
@@ -104,14 +147,15 @@ export function messagePresetsFor(category) {
   ];
 }
 
-export const HAPPY_FOLLOWUP =
-  "Awesome! Got any suggestions for us, or should we just say thanks? 🙌 Reply 'nothing, you're awesome' OR tell us what you'd like to see improved.";
-
 export const SUGGESTION_THANKS = "Thanks, we'll take a look! 🙏";
 
-export const SAD_FOLLOWUP =
-  'Sorry to hear that. Tell us what went wrong so we can fix it — this goes straight to the owner, not public.';
+/** @deprecated use resolveMessageTemplates(business).happyFollowup */
+export const HAPPY_FOLLOWUP = defaultMessageTemplates('restaurant').happyFollowup;
 
+/** @deprecated use resolveMessageTemplates(business).sadFollowup */
+export const SAD_FOLLOWUP = defaultMessageTemplates('restaurant').sadFollowup;
+
+/** @deprecated use renderBusinessTemplate(templates.googleAsk, business, customer) */
 export function googleReviewAsk(link) {
-  return `That means a lot! Could you drop us a quick Google review? ${link || ''}`.trim();
+  return defaultMessageTemplates('restaurant').googleAsk.replace('{{google_review_link}}', link || '').trim();
 }

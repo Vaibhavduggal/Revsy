@@ -235,7 +235,10 @@ export default function Dashboard() {
 
   const copy = getCopy(business?.category);
   const { stats, recent } = data;
-  const chartWeeks = (analytics?.weeks || []).map((w) => ({
+  const reviewWeeks = analytics?.weeks || [];
+  const hasReviewChartData = reviewWeeks.some((w) => (w.positive || 0) + (w.negative || 0) > 0);
+  const chartSource = hasReviewChartData ? reviewWeeks : (analytics?.sentiment?.weeks || reviewWeeks);
+  const chartWeeks = chartSource.map((w) => ({
     ...w,
     positive: w.positive ?? 0,
     negative: w.negative ?? 0,

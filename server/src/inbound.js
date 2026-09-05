@@ -4,10 +4,9 @@ import { sendBusinessWhatsApp } from './whatsapp.js';
 import { classifyOneReview } from './ai.js';
 import {
   getCopy,
-  HAPPY_FOLLOWUP,
-  SAD_FOLLOWUP,
   SUGGESTION_THANKS,
-  googleReviewAsk,
+  renderBusinessTemplate,
+  resolveMessageTemplates,
 } from './categoryCopy.js';
 import { detectSentimentReply, isNoComplaintReply, phoneTail, shouldAdvanceDelivery } from './sentimentFlow.js';
 
@@ -138,6 +137,7 @@ export async function findCustomerForInbound(phone) {
 
 export async function handleCustomerInbound(business, customer, text, { skipSend = false } = {}) {
   const copy = getCopy(business.category);
+  const templates = resolveMessageTemplates(business);
   const history = historyOf(customer);
   history.push({ from: 'customer', type: 'text', text, at: new Date().toISOString() });
 
@@ -175,7 +175,8 @@ export async function handleCustomerInbound(business, customer, text, { skipSend
     if (reqData) await db.from('requests').update({ reaction: sentiment }).eq('id', reqData.id);
 
     if (sentiment === 'positive') {
-      pushBiz(HAPPY_FOLLOWUP);
+      const happyFollowup = renderBusinessTemplate(templates.happyFollowup, business, customer);
+      pushBiz(happyFollowup);
       await persistCustomer(customer.id, {
         wa_step: 'awaiting_happy_detail',
         stage: 'positive',
@@ -185,14 +186,15 @@ export async function handleCustomerInbound(business, customer, text, { skipSend
         type: 'positive_reply',
         customerName: customer.name,
         phone: customer.phone,
-        message: HAPPY_FOLLOWUP,
+        message: happyFollowup,
         status: 'Positive',
       });
-      if (!skipSend) await deliver(business, { phone: customer.phone, message: HAPPY_FOLLOWUP, customerName: customer.name });
+      if (!skipSend) await deliver(business, { phone: customer.phone, message: happyFollowup, customerName: customer.name });
       return { step: 'awaiting_happy_detail', sentiment, replies, history };
     }
 
-    pushBiz(SAD_FOLLOWUP);
+    const sadFollowup = renderBusinessTemplate(templates.sadFollowup, business, customer);
+    pushBiz(sadFollowup);
     await persistCustomer(customer.id, {
       wa_step: 'awaiting_complaint',
       stage: 'negative',
@@ -202,16 +204,16 @@ export async function handleCustomerInbound(business, customer, text, { skipSend
       type: 'negative_reply',
       customerName: customer.name,
       phone: customer.phone,
-      message: SAD_FOLLOWUP,
+      message: sadFollowup,
       status: 'Negative',
     });
-    if (!skipSend) await deliver(business, { phone: customer.phone, message: SAD_FOLLOWUP, customerName: customer.name });
+    if (!skipSend) await deliver(business, { phone: customer.phone, message: sadFollowup, customerName: customer.name });
     return { step: 'awaiting_complaint', sentiment, replies, history };
   }
 
   if (step === 'awaiting_happy_detail') {
     if (isNoComplaintReply(text)) {
-      const ask = googleReviewAsk(business.googleReviewLink);
+      const ask = renderBusinessTemplate(templates.googleAsk, business, customer);
       pushBiz(ask, 'link');
       await persistCustomer(customer.id, {
         wa_step: 'done',

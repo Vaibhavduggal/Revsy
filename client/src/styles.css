@@ -4,7 +4,8 @@
    ============================================================ */
 :root {
   --bg-gradient-start: #A8A9B4;
-  --bg-gradient-end: #F0D2A8;
+  --bg-gradient-end: #E8A882;
+  --sunset-glow: #D4846A;
   --ink: #1A1A1F;
   --cream: #FAFAF8;
   --accent-line: #D9C9A8;
@@ -330,6 +331,7 @@ p { margin: 0; }
   color: var(--ink);
   background-color: var(--cream);
   background-image:
+    radial-gradient(ellipse 95% 75% at -12% 112%, color-mix(in srgb, var(--sunset-glow, #D4846A) 72%, transparent) 0%, transparent 62%),
     radial-gradient(ellipse 90% 70% at -8% -12%, color-mix(in srgb, var(--bg-gradient-start) 72%, transparent) 0%, transparent 58%),
     radial-gradient(ellipse 85% 70% at 108% 118%, color-mix(in srgb, var(--bg-gradient-end) 88%, transparent) 0%, transparent 54%),
     radial-gradient(ellipse 50% 42% at 88% 6%, color-mix(in srgb, var(--bg-gradient-end) 38%, transparent) 0%, transparent 48%);

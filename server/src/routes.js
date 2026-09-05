@@ -6,7 +6,8 @@ import { enqueueSend, retrySend, getFailedSends, processDueSends } from './queue
 import { classifyOneReview, weeklyUpdateBusiness, getCurrentSummaryRow, issuesFromRow, runFirstClusteringForBusiness } from './ai.js';
 import { listGoogleLocations, saveSelectedLocation, autoSelectLocationIfSingle, syncGoogleReviewsForBusiness } from './google.js';
 import { buildSupabaseGoogleAuthUrl, getPublicSupabaseConfig, signOAuthState, verifyOAuthState, verifySupabaseAccessToken } from './supabase-auth.js';
-import { getCopy, defaultTemplateFor, messagePresetsFor, normalizeCategory } from './categoryCopy.js';
+import { getCopy, defaultTemplateFor, defaultMessageTemplates, messagePresetsFor, normalizeCategory, renderBusinessTemplate, resolveMessageTemplates } from './categoryCopy.js';
+import { resolveFrontendUrl, resolveGoogleRedirectUri } from './oauth-urls.js';
 import { extractInboundMessages, extractDeliveryStatuses } from './sentimentFlow.js';
 import { handleCustomerInbound, handleInboundText, applyDeliveryStatus } from './inbound.js';
 
@@ -30,14 +31,11 @@ function newId(prefix) {
 export const MESSAGE_PRESETS = messagePresetsFor('restaurant');
 
 export function render(business, customer) {
+  const templates = resolveMessageTemplates(business);
   const template = (customer && customer.customMessage && customer.customMessage.trim())
     ? customer.customMessage
-    : (business.messageTemplate || defaultTemplateFor(business.category));
-  return renderTemplate(template, {
-    customerName: customer?.name,
-    businessName: business.name,
-    reviewLink: business.googleReviewLink,
-  });
+    : templates.gate;
+  return renderBusinessTemplate(template, business, customer);
 }
 
 function renderConversation(business, customer, request, feedbackForCustomer) {
@@ -300,6 +298,7 @@ router.post('/auth/supabase', async (req, res) => {
     const preApproved = !!invite;
     if (invite) await db.from('invited_emails').update({ used: true }).eq('id', invite.id);
     businessId = newId('biz');
+    const oauthTemplates = defaultMessageTemplates('restaurant');
     await db.from('businesses').insert({
       id: businessId,
       name,
@@ -311,7 +310,8 @@ router.post('/auth/supabase', async (req, res) => {
       address: '',
       phone: '',
       description: '',
-      message_template: defaultTemplate,
+      message_template: oauthTemplates.gate,
+      message_templates: oauthTemplates,
       delay_seconds: 1800,
       demo_mode: false,
       subscription_status: 'trial',
@@ -598,7 +598,12 @@ router.post('/render', auth, async (req, res) => {
   const effectiveTemplate = template && template.trim()
     ? template
     : (customer && customer.customMessage && customer.customMessage.trim()) ? customer.customMessage : req.business.messageTemplate;
-  const message = renderTemplate(effectiveTemplate, { customerName: customerName || customer?.name || req.body?.fallbackName || 'Rahul Sharma', businessName: req.business.name, reviewLink: req.business.googleReviewLink });
+    const message = renderTemplate(effectiveTemplate, {
+      customerName: customerName || customer?.name || req.body?.fallbackName || 'Rahul Sharma',
+      businessName: req.business.name,
+      reviewLink: req.business.googleReviewLink,
+      category: req.business.category,
+    });
   res.json({ message, usingOverride: !!(customer && customer.customMessage && customer.customMessage.trim() && !template) });
 });
 
@@ -860,18 +865,55 @@ router.get('/activity', auth, async (req, res) => {
 
 router.get('/settings', auth, (req, res) => {
   const b = req.business;
-  res.json({ businessId: b.id, businessName: b.name, googleReviewLink: b.googleReviewLink, feedbackLink: b.feedbackLink, messageTemplate: b.messageTemplate, delaySeconds: b.delaySeconds, demoMode: b.demoMode, reviewsReceived: b.reviewsReceived || 0, placeId: b.placeId || '', whatsappStatus: b.whatsapp?.status || 'not_connected', whatsappBsp: b.whatsapp?.bsp || '', whatsappCampaignName: b.whatsapp?.campaignName || '', onboardingCompleted: !!b.onboardingCompleted, isDemo: !!b.isDemo, googleConnected: !!b.googleConnected, approvalStatus: b.approvalStatus || 'pending_approval', category: b.category || 'restaurant', categorySet: !!b.categorySet, address: b.address || '', phone: b.phone || '' });
+  const templates = resolveMessageTemplates(b);
+  res.json({
+    businessId: b.id,
+    businessName: b.name,
+    googleReviewLink: b.googleReviewLink,
+    feedbackLink: b.feedbackLink,
+    messageTemplate: templates.gate,
+    messageTemplates: templates,
+    delaySeconds: b.delaySeconds,
+    demoMode: b.demoMode,
+    reviewsReceived: b.reviewsReceived || 0,
+    placeId: b.placeId || '',
+    whatsappStatus: b.whatsapp?.status || 'not_connected',
+    whatsappBsp: b.whatsapp?.bsp || '',
+    whatsappCampaignName: b.whatsapp?.campaignName || '',
+    onboardingCompleted: !!b.onboardingCompleted,
+    isDemo: !!b.isDemo,
+    googleConnected: !!b.googleConnected,
+    approvalStatus: b.approvalStatus || 'pending_approval',
+    category: b.category || 'restaurant',
+    categorySet: !!b.categorySet,
+    address: b.address || '',
+    phone: b.phone || '',
+  });
 });
 
 router.put('/settings', auth, async (req, res) => {
   const db = getDb();
   const b = req.business;
-  const { businessName, googleReviewLink, feedbackLink, messageTemplate, delaySeconds, demoMode, placeId, whatsappCampaignName, whatsappBsp, category } = req.body || {};
+  const { businessName, googleReviewLink, feedbackLink, messageTemplate, messageTemplates, delaySeconds, demoMode, placeId, whatsappCampaignName, whatsappBsp, category } = req.body || {};
   const updates = {};
   if (typeof businessName === 'string' && businessName.trim()) updates.name = businessName.trim();
   if (typeof googleReviewLink === 'string') updates.google_review_link = googleReviewLink.trim();
   if (typeof feedbackLink === 'string') updates.feedback_link = feedbackLink.trim();
-  if (typeof messageTemplate === 'string' && messageTemplate.trim()) updates.message_template = messageTemplate.trim();
+  const templatesPatch = { ...(b.messageTemplates || {}) };
+  if (messageTemplates && typeof messageTemplates === 'object') {
+    for (const key of ['gate', 'happyFollowup', 'googleAsk', 'sadFollowup']) {
+      if (typeof messageTemplates[key] === 'string' && messageTemplates[key].trim()) {
+        templatesPatch[key] = messageTemplates[key].trim();
+      }
+    }
+  }
+  if (typeof messageTemplate === 'string' && messageTemplate.trim()) {
+    templatesPatch.gate = messageTemplate.trim();
+    updates.message_template = messageTemplate.trim();
+  } else if (templatesPatch.gate) {
+    updates.message_template = templatesPatch.gate;
+  }
+  if (Object.keys(templatesPatch).length) updates.message_templates = templatesPatch;
   if (Number.isFinite(Number(delaySeconds))) updates.delay_seconds = Number(delaySeconds);
   if (typeof demoMode === 'boolean') updates.demo_mode = demoMode;
   if (typeof placeId === 'string') updates.place_id = placeId.trim();
@@ -885,14 +927,37 @@ router.put('/settings', auth, async (req, res) => {
     updates.whatsapp_bsp = campaign ? `${bsp}::${campaign}` : bsp;
   }
   if (Object.keys(updates).length > 0) await db.from('businesses').update(updates).eq('id', b.id);
-  const updated = { ...b, ...updates };
-  res.json({ businessName: updated.name, googleReviewLink: updated.googleReviewLink, feedbackLink: updated.feedbackLink, messageTemplate: updated.messageTemplate, delaySeconds: updated.delaySeconds, demoMode: updated.demoMode, reviewsReceived: updated.reviewsReceived || 0, placeId: updated.placeId || '', whatsappStatus: updated.whatsapp?.status || 'not_connected', whatsappBsp: updated.whatsapp?.bsp || '' });
+  const updated = await getBusiness(b.id);
+  const templates = resolveMessageTemplates(updated);
+  res.json({
+    businessName: updated.name,
+    googleReviewLink: updated.googleReviewLink,
+    feedbackLink: updated.feedbackLink,
+    messageTemplate: templates.gate,
+    messageTemplates: templates,
+    delaySeconds: updated.delaySeconds,
+    demoMode: updated.demoMode,
+    reviewsReceived: updated.reviewsReceived || 0,
+    placeId: updated.placeId || '',
+    whatsappStatus: updated.whatsapp?.status || 'not_connected',
+    whatsappBsp: updated.whatsapp?.bsp || '',
+  });
 });
 
 router.get('/message-preview', auth, (req, res) => {
   const b = req.business;
-  const message = renderTemplate(b.messageTemplate, { customerName: 'Rahul Sharma', businessName: b.name, reviewLink: b.googleReviewLink });
-  res.json({ message, effectiveDelay: effectiveDelay(b) });
+  const templates = resolveMessageTemplates(b);
+  const sampleCustomer = { name: 'Rahul Sharma' };
+  res.json({
+    message: renderBusinessTemplate(templates.gate, b, sampleCustomer),
+    previews: {
+      gate: renderBusinessTemplate(templates.gate, b, sampleCustomer),
+      happyFollowup: renderBusinessTemplate(templates.happyFollowup, b, sampleCustomer),
+      googleAsk: renderBusinessTemplate(templates.googleAsk, b, sampleCustomer),
+      sadFollowup: renderBusinessTemplate(templates.sadFollowup, b, sampleCustomer),
+    },
+    effectiveDelay: effectiveDelay(b),
+  });
 });
 
 // --- Onboarding gate ---
@@ -971,7 +1036,7 @@ router.get('/auth/google', async (req, res) => {
   if (!businessId && req.business) businessId = req.business.id;
   if (!businessId) return res.status(401).json({ error: 'Unauthorized — login first' });
   const clientId = process.env.GOOGLE_CLIENT_ID;
-  const redirectUri = process.env.GOOGLE_REDIRECT_URI;
+  const redirectUri = resolveGoogleRedirectUri(req);
   if (!clientId || !redirectUri) {
     return res.status(500).json({ error: 'Google OAuth not configured. Set GOOGLE_CLIENT_ID and GOOGLE_REDIRECT_URI env vars.' });
   }
@@ -986,7 +1051,7 @@ router.get('/auth/google/callback', async (req, res) => {
   if (!code || !state) return res.status(400).send('Missing code or state');
   const clientId = process.env.GOOGLE_CLIENT_ID;
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
-  const redirectUri = process.env.GOOGLE_REDIRECT_URI;
+  const redirectUri = resolveGoogleRedirectUri(req);
   if (!clientId || !clientSecret || !redirectUri) return res.status(500).send('Google OAuth not configured');
   try {
     const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
@@ -1052,8 +1117,7 @@ router.get('/auth/google/callback', async (req, res) => {
       console.error('post-oauth location/sync failed:', e.message);
     }
 
-    const frontendBase = process.env.FRONTEND_URL
-      || (process.env.GOOGLE_REDIRECT_URI ? new URL(process.env.GOOGLE_REDIRECT_URI).origin : '');
+    const frontendBase = resolveFrontendUrl(req);
     const redirectTo = `${String(frontendBase).replace(/\/$/, '')}/onboarding?google=success`;
     res.redirect(redirectTo || '/onboarding?google=success');
   } catch (e) {
@@ -1210,10 +1274,11 @@ router.post('/signup', async (req, res) => {
     preApproved = true;
     await db.from('invited_emails').update({ used: true }).eq('id', invite.id);
   }
+  const templates = defaultMessageTemplates('restaurant');
   const business = {
     id: newId('biz'), name: businessName ? String(businessName).trim() : em.split('@')[0], owner_email: em, password: hashPassword(password), is_demo: false,
     google_review_link: '', feedback_link: '', address: '', phone: '', description: '',
-    message_template: defaultTemplate, delay_seconds: 1800, demo_mode: false, subscription_status: 'trial', created_at: new Date().toISOString(),
+    message_template: templates.gate, message_templates: templates, delay_seconds: 1800, demo_mode: false, subscription_status: 'trial', created_at: new Date().toISOString(),
     reviews_received: 0, place_id: '', whatsapp_bsp: '', whatsapp_api_key: '', whatsapp_phone_number_id: '', whatsapp_status: 'not_connected',
     google_access_token: null, google_refresh_token: null, google_token_expires_at: null, google_connected: false, google_account_email: null, onboarding_completed: false,
     approval_status: 'pending_approval', pre_approved: preApproved, approved_at: null, rejected_at: null,

@@ -3,7 +3,7 @@ import fs from 'fs';
 import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 import { createClient } from '@supabase/supabase-js';
-import { defaultTemplateFor, getCopy } from './categoryCopy.js';
+import { defaultTemplateFor, getCopy, defaultMessageTemplates } from './categoryCopy.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -41,6 +41,46 @@ export async function initDb() {
   return supabase;
 }
 
+async function seedDemoBusinessAnalytics(businessId) {
+  const { count } = await supabase.from('reviews').select('*', { count: 'exact', head: true }).eq('business_id', businessId);
+  if ((count || 0) > 0) return;
+
+  const DAY = 86400000;
+  const now = Date.now();
+  const names = [
+    'Aarav Sharma', 'Vivaan Patel', 'Aditya Gupta', 'Ananya Iyer', 'Diya Verma',
+    'Rahul Khanna', 'Priya Banerjee', 'Karan Singh', 'Neha Joshi', 'Pooja Verma',
+    'Isha Kapoor', 'Kavya Rao', 'Rohan Mehta', 'Sanjay Das', 'Meera Nambiar',
+  ];
+  const reviews = [];
+  let idx = 0;
+  for (let week = 0; week < 12; week++) {
+    const perWeek = 2 + (week % 3);
+    for (let j = 0; j < perWeek; j++) {
+      const negative = (week + j) % 4 === 0;
+      reviews.push({
+        id: `rev_demo_${week}_${j}`,
+        business_id: businessId,
+        customer_id: null,
+        customer_name: names[idx % names.length],
+        rating: negative ? 2 + (j % 2) : 4 + (j % 2),
+        text: negative ? 'Order took too long and fries were soggy.' : 'Best smash burger in Ludhiana!',
+        source: 'internal',
+        created_at: new Date(now - (11 - week) * 7 * DAY - j * DAY - 3600000).toISOString(),
+        is_read: week > 9,
+      });
+      idx += 1;
+    }
+  }
+  const { error } = await supabase.from('reviews').insert(reviews);
+  if (error) {
+    console.error('[revsy] seedDemoBusinessAnalytics:', error.message);
+    return;
+  }
+  const received = reviews.filter((r) => (r.rating || 5) >= 4).length;
+  await supabase.from('businesses').update({ reviews_received: received }).eq('id', businessId);
+}
+
 async function ensureDemoBusiness() {
   try {
     const { data } = await supabase.from('businesses').select('id').eq('is_demo', true).limit(1);
@@ -53,10 +93,17 @@ async function ensureDemoBusiness() {
       category_set: true,
     };
     if (data?.[0]) {
-      const { error } = await supabase.from('businesses').update(patch).eq('id', data[0].id);
+      const demoTemplates = defaultMessageTemplates('restaurant');
+      const { error } = await supabase.from('businesses').update({
+        ...patch,
+        message_template: demoTemplates.gate,
+        message_templates: demoTemplates,
+      }).eq('id', data[0].id);
       if (error) console.error('[revsy] ensureDemo update:', error.message);
+      await seedDemoBusinessAnalytics(data[0].id);
       return;
     }
+    const demoTemplates = defaultMessageTemplates('restaurant');
     const { error } = await supabase.from('businesses').insert({
       id: 'biz_1',
       name: 'Smash Bros',
@@ -68,7 +115,8 @@ async function ensureDemoBusiness() {
       address: 'SCF 29 F, Bhai Randhir Singh Nagar, Ludhiana, Punjab 141012',
       phone: '098143 05932',
       description: 'Smash burger restaurant demo used for live client walkthroughs.',
-      message_template: defaultTemplateFor('restaurant'),
+      message_template: demoTemplates.gate,
+      message_templates: demoTemplates,
       delay_seconds: 1800,
       demo_mode: true,
       subscription_status: 'active',
@@ -87,6 +135,7 @@ async function ensureDemoBusiness() {
       category_set: true,
     });
     if (error) console.error('[revsy] ensureDemo insert:', error.message);
+    else await seedDemoBusinessAnalytics('biz_1');
   } catch (e) {
     console.error('[revsy] ensureDemo:', e.message);
   }
@@ -115,6 +164,7 @@ async function ensureBurnGym() {
   try {
     const { data: existing } = await supabase.from('businesses').select('id').eq('owner_email', 'owner@burngym.com').maybeSingle();
     const now = new Date().toISOString();
+    const gymTemplates = defaultMessageTemplates('gym');
     const gym = {
       name: 'Burn Gym, Ghumar Mandi',
       owner_email: 'owner@burngym.com',
@@ -124,7 +174,8 @@ async function ensureBurnGym() {
       address: 'Plot No. B-19/186, 3rd-4th Floor, Rani Jhansi Road, Ghumar Mandi, Ludhiana, Punjab 141001',
       phone: '+91 99887 77999',
       description: 'Burn Gym, Ghumar Mandi — strength, PT, and group training in Ludhiana.',
-      message_template: defaultTemplateFor('gym'),
+      message_template: gymTemplates.gate,
+      message_templates: gymTemplates,
       delay_seconds: 1800,
       demo_mode: true,
       subscription_status: 'active',
@@ -160,6 +211,7 @@ async function ensureBurnGym() {
 
     const { data: onboard } = await supabase.from('businesses').select('id').eq('owner_email', 'setup@burngym.com').maybeSingle();
     if (!onboard) {
+      const onboardTemplates = defaultMessageTemplates('restaurant');
       await supabase.from('businesses').insert({
         id: 'biz_burn_onboard',
         name: 'Burn Gym, Ghumar Mandi',
@@ -171,7 +223,8 @@ async function ensureBurnGym() {
         address: '',
         phone: '',
         description: '',
-        message_template: defaultTemplateFor('restaurant'),
+        message_template: onboardTemplates.gate,
+        message_templates: onboardTemplates,
         delay_seconds: 1800,
         demo_mode: false,
         subscription_status: 'trial',
@@ -327,6 +380,7 @@ function mapBusiness(row) {
     phone: row.phone,
     description: row.description,
     messageTemplate: row.message_template,
+    messageTemplates: row.message_templates && typeof row.message_templates === 'object' ? row.message_templates : {},
     delaySeconds: row.delay_seconds,
     demoMode: row.demo_mode,
     subscriptionStatus: row.subscription_status,
@@ -653,11 +707,20 @@ function toActivityRow(obj) {
 
 export const DEFAULT_TEMPLATE = defaultTemplateFor('restaurant');
 
-export function renderTemplate(template, { customerName, businessName, reviewLink }) {
-  return String(template)
-    .replaceAll('[customer name]', customerName)
-    .replaceAll('[business name]', businessName)
-    .replaceAll('[google review link]', reviewLink);
+export function renderTemplate(template, { customerName, businessName, reviewLink, visitVerb, category }) {
+  const copy = getCopy(category);
+  const name = customerName || 'there';
+  const biz = businessName || 'us';
+  const link = reviewLink || '';
+  const verb = visitVerb || copy.visitGerund;
+  return String(template || '')
+    .replaceAll('{{customer_name}}', name)
+    .replaceAll('{{business_name}}', biz)
+    .replaceAll('{{google_review_link}}', link)
+    .replaceAll('{{visit_verb}}', verb)
+    .replaceAll('[customer name]', name)
+    .replaceAll('[business name]', biz)
+    .replaceAll('[google review link]', link);
 }
 
 export function buildSeedExport() {
@@ -754,6 +817,7 @@ function buildSeed() {
       customerName: cust.name,
       businessName: business.name,
       reviewLink: business.googleReviewLink,
+      category: business.category,
     });
     requests.push({
       id,

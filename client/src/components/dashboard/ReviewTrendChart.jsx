@@ -17,11 +17,11 @@ import { Area, CartesianGrid, ComposedChart, Line, ReferenceLine, XAxis, YAxis }
 const chartConfig = {
   positive: {
     label: 'Positive',
-    color: '#14b8a6',
+    color: 'var(--ok, #7A9B76)',
   },
   negative: {
     label: 'Negative',
-    color: '#ec4899',
+    color: 'var(--warn, #C2705A)',
   },
 };
 
