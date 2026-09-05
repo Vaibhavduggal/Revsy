@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../auth-context.jsx';
 import { Logo } from '../components/Icons.jsx';
+import GeoAccent from '../components/marketing/GeoAccent.jsx';
 import GoogleSignIn from '../components/GoogleSignIn.jsx';
 import { useToast } from '../components/useToast.jsx';
 
@@ -29,10 +30,11 @@ export default function Signup() {
   };
 
   return (
-    <div className="landing" style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', background: 'radial-gradient(900px 400px at 50% -10%, var(--accent-soft), #fff)' }}>
+    <div className="editorial-shell" style={{ display: 'grid', placeItems: 'center', padding: 24 }}>
       <div className="card" style={{ width: '100%', maxWidth: 400 }}>
         <div className="brand" style={{ justifyContent: 'center', marginBottom: 8 }}><Logo /><span>Revsy</span></div>
-        <h2 style={{ textAlign: 'center', fontSize: 22 }}>Create your account</h2>
+        <p className="editorial-kicker" style={{ justifyContent: 'center', width: '100%' }}><GeoAccent /> Get started</p>
+        <h2 style={{ textAlign: 'center', fontSize: 28 }}>Create your account</h2>
         <p className="sub" style={{ textAlign: 'center', marginBottom: 18 }}>Start collecting Google reviews on autopilot</p>
 
         <GoogleSignIn businessName={businessName} label="Sign up with Google" onError={show} />

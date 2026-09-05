@@ -1,23 +1,27 @@
 /* ============================================================
-   Revsy marketing site — Spade-inspired design language
-   Near-black type, white canvas, forest accent, generous space
+   Revsy marketing — editorial mesh, serif display, muted plum
    ============================================================ */
 .mkt {
-  --m-ink: #111111;
+  --m-ink: #1A1A1F;
   --m-muted: #5c5c66;
-  --m-line: #e6e6ea;
-  --m-bg: #ffffff;
-  --m-bg-soft: #f6f7f8;
-  --m-accent: #1a3d34;
-  --m-accent-hover: #142f28;
-  --m-dark: #0f1f1a;
-  --m-motif: #1a3d34;
+  --m-line: rgba(26, 26, 31, 0.1);
+  --m-bg: transparent;
+  --m-bg-soft: rgba(250, 250, 248, 0.72);
+  --m-accent: #6B6478;
+  --m-accent-hover: #534E5E;
+  --m-dark: #1A1A1F;
+  --m-motif: #6B6478;
   --m-max: 1120px;
   --m-radius: 16px;
   color: var(--m-ink);
-  background: var(--m-bg);
+  background-color: var(--cream, #FAFAF8);
+  background-image:
+    radial-gradient(ellipse 90% 70% at -8% -10%, color-mix(in srgb, var(--bg-gradient-start, #A8A9B4) 70%, transparent) 0%, transparent 58%),
+    radial-gradient(ellipse 80% 70% at 110% 108%, color-mix(in srgb, var(--bg-gradient-end, #F0D2A8) 82%, transparent) 0%, transparent 52%),
+    radial-gradient(ellipse 48% 38% at 78% 8%, color-mix(in srgb, var(--bg-gradient-end, #F0D2A8) 36%, transparent) 0%, transparent 48%);
   font-family: var(--font, 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif);
   -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
 }
 
 .mkt-container {
@@ -101,7 +105,7 @@
 .rupee-coin-spin {
   transform-style: preserve-3d;
   animation: rupee-spin 6.5s linear infinite, rupee-float 3.2s ease-in-out infinite;
-  filter: drop-shadow(0 12px 18px rgba(26, 61, 52, 0.18));
+  filter: drop-shadow(0 12px 18px rgba(107, 100, 120, 0.22));
 }
 @keyframes rupee-spin {
   from { transform: rotateY(0deg); }
@@ -152,8 +156,8 @@
 
 /* Hero — text-first, white */
 .mkt-hero {
-  padding: 56px 0 72px;
-  background: var(--m-bg);
+  padding: 72px 0 96px;
+  background: transparent;
 }
 
 .mkt-hero-inner {
@@ -164,10 +168,11 @@
 }
 
 .mkt-hero h1 {
-  font-size: clamp(2.5rem, 5.5vw, 3.75rem);
-  font-weight: 700;
-  letter-spacing: -0.035em;
-  line-height: 1.05;
+  font-family: var(--font-display, Fraunces, Georgia, serif);
+  font-size: clamp(2.7rem, 5.8vw, 4rem);
+  font-weight: 500;
+  letter-spacing: -0.03em;
+  line-height: 1.08;
   max-width: 14ch;
 }
 
@@ -203,11 +208,12 @@
 
 .mkt-trust-label {
   text-align: center;
-  font-size: 13px;
+  font-size: 11px;
   font-weight: 600;
   color: var(--m-muted);
-  letter-spacing: 0.02em;
-  margin-bottom: 18px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  margin-bottom: 22px;
 }
 
 .mkt-trust-stats {
@@ -230,17 +236,18 @@
 
 /* Features */
 .mkt-features {
-  padding: 88px 0;
+  padding: 108px 0;
 }
 
 .mkt-section-title {
-  font-size: clamp(1.75rem, 3vw, 2.25rem);
-  font-weight: 700;
-  letter-spacing: -0.03em;
+  font-family: var(--font-display, Fraunces, Georgia, serif);
+  font-size: clamp(1.85rem, 3.2vw, 2.45rem);
+  font-weight: 500;
+  letter-spacing: -0.025em;
   text-align: center;
   max-width: 18ch;
-  margin: 0 auto 48px;
-  line-height: 1.15;
+  margin: 0 auto 56px;
+  line-height: 1.18;
 }
 
 .mkt-feature-grid {
@@ -303,7 +310,7 @@
 
 /* Industries */
 .mkt-industries {
-  padding: 0 0 88px;
+  padding: 0 0 108px;
 }
 
 .mkt-industry-grid {
@@ -344,7 +351,8 @@
 }
 
 .mkt-quote-grid p {
-  font-size: clamp(1.25rem, 2.5vw, 1.65rem);
+  font-family: var(--font-display, Fraunces, Georgia, serif);
+  font-size: clamp(1.3rem, 2.5vw, 1.75rem);
   line-height: 1.45;
   font-weight: 500;
   letter-spacing: -0.02em;
@@ -364,10 +372,15 @@
 .mkt-quote-grid footer span { display: block; margin-top: 4px; }
 
 /* Dark band */
+.mkt-dark h2,
+.mkt-cta-band h2 {
+  font-family: var(--font-display, Fraunces, Georgia, serif);
+  font-weight: 500;
+}
 .mkt-dark {
   background: var(--m-dark);
-  color: #fff;
-  padding: 72px 0;
+  color: var(--cream, #FAFAF8);
+  padding: 88px 0;
 }
 
 .mkt-dark-inner {
@@ -376,12 +389,15 @@
 }
 
 .mkt-eyebrow {
-  font-size: 13px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
-  opacity: 0.65;
-  margin-bottom: 12px;
+  letter-spacing: 0.18em;
+  opacity: 0.7;
+  margin-bottom: 14px;
 }
 
 .mkt-dark h2 {
@@ -441,14 +457,13 @@
 /* CTA band */
 .mkt-cta-band {
   background: var(--m-accent);
-  color: #fff;
-  padding: 64px 0;
+  color: var(--cream, #FAFAF8);
+  padding: 80px 0;
   text-align: center;
 }
 
 .mkt-cta-band h2 {
-  font-size: clamp(1.5rem, 3vw, 2rem);
-  font-weight: 700;
+  font-size: clamp(1.6rem, 3vw, 2.15rem);
   letter-spacing: -0.03em;
 }
 
@@ -473,8 +488,8 @@
 /* Footer */
 .mkt-footer {
   border-top: 1px solid var(--m-line);
-  padding: 56px 0 24px;
-  background: var(--m-bg);
+  padding: 64px 0 28px;
+  background: transparent;
 }
 
 .mkt-footer-grid {
@@ -492,10 +507,10 @@
 }
 
 .mkt-footer h4 {
-  font-size: 13px;
-  font-weight: 700;
+  font-size: 11px;
+  font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.16em;
   margin-bottom: 14px;
   color: var(--m-muted);
 }

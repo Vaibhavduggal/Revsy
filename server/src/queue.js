@@ -31,6 +31,9 @@ export async function enqueueSend({ businessId, customerId, phone, message, dela
     sent_at: null,
   };
   await db.from('pending_sends').insert(row);
+  if (customerId) {
+    await db.from('customers').update({ wa_delivery_status: 'queued' }).eq('id', customerId);
+  }
   return mapPendingSend(row);
 }
 
@@ -92,6 +95,7 @@ async function processRow(row) {
         stage: 'sent',
         last_request_at: new Date().toISOString(),
         last_request_status: 'Sent',
+        wa_delivery_status: 'sent',
         wa_step: customer.waStep === 'idle' ? 'awaiting_sentiment' : customer.waStep,
         wa_history: history,
       }).eq('id', customer.id);
@@ -119,6 +123,9 @@ async function processRow(row) {
       update.scheduled_time = new Date(Date.now() + backoffMs(retryCount)).toISOString();
     }
     await db.from('pending_sends').update(update).eq('id', row.id);
+    if (update.status === 'failed' && row.customerId) {
+      await db.from('customers').update({ wa_delivery_status: 'failed' }).eq('id', row.customerId);
+    }
   }
 }
 

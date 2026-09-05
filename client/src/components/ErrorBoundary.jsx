@@ -23,7 +23,7 @@ export class ErrorBoundary extends Component {
                 this.setState({ error: null });
                 window.location.href = '/';
               }}
-              style={{ background: '#e63946', color: '#fff', border: 0, borderRadius: 10, padding: '10px 16px', fontWeight: 700 }}
+              style={{ background: 'var(--accent)', color: '#fff', border: 0, borderRadius: 10, padding: '10px 16px', fontWeight: 700 }}
             >
               Back to home
             </button>

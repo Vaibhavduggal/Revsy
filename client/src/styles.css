@@ -1,25 +1,30 @@
 /* ============================================================
-   ReviewBot — design system
-   Warm burger-brand accent (tomato red / flame orange)
+   Revsy — editorial, muted, confident
+   Accent = interactive. Sage = positive reviews. Terracotta = negative.
    ============================================================ */
 :root {
-  --accent: #e63946;
-  --accent-dark: #c92a37;
-  --accent-soft: #fff1f0;
-  --accent-2: #ff7a18;
-  --ink: #1f2430;
+  --bg-gradient-start: #A8A9B4;
+  --bg-gradient-end: #F0D2A8;
+  --ink: #1A1A1F;
+  --cream: #FAFAF8;
+  --accent-line: #D9C9A8;
+  --accent: #6B6478;
+  --accent-dark: #534E5E;
+  --accent-soft: #EDEAF0;
+  --accent-2: #8A8394;
   --muted: #6b7280;
-  --line: #ececf1;
-  --bg: #ffffff;
+  --line: #E5E7EB;
+  --bg: #FAFAF8;
   --bg-soft: #f7f8fa;
-  --ok: #16a34a;
-  --ok-soft: #e8f6ee;
-  --warn: #dc2626;
-  --warn-soft: #fef2f2;
+  --ok: #7A9B76;
+  --ok-soft: #EEF2ED;
+  --warn: #C2705A;
+  --warn-soft: #FBEEEA;
   --radius: 14px;
   --shadow: 0 1px 2px rgba(16, 24, 40, 0.04), 0 8px 24px rgba(16, 24, 40, 0.06);
   --shadow-lg: 0 12px 40px rgba(16, 24, 40, 0.12);
   --font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-display: 'Fraunces', Georgia, 'Times New Roman', serif;
 }
 
 * { box-sizing: border-box; }
@@ -53,7 +58,7 @@ p { margin: 0; }
 .btn.ghost:hover { background: var(--accent-soft); }
 .btn.sm { padding: 8px 12px; font-size: 13px; }
 .btn.green { background: var(--ok); }
-.btn.green:hover { background: #138a3e; }
+.btn.green:hover { background: #658564; }
 .btn:disabled { opacity: .55; cursor: not-allowed; }
 
 /* ---------- Inputs ---------- */
@@ -123,9 +128,10 @@ p { margin: 0; }
   display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700;
   padding: 4px 10px; border-radius: 999px;
 }
-.badge.sent { background: #eef2ff; color: #4338ca; }
-.badge.opened { background: #fff4e5; color: var(--warn); }
+.badge.sent { background: var(--accent-soft); color: var(--accent-dark); }
+.badge.opened { background: var(--accent-soft); color: var(--accent-dark); }
 .badge.reviewed { background: var(--ok-soft); color: var(--ok); }
+.badge.warn { background: var(--warn-soft); color: var(--warn); }
 .badge.scheduled { background: var(--bg-soft); color: var(--muted); }
 .badge.demo { background: var(--accent-soft); color: var(--accent-dark); }
 
@@ -215,7 +221,7 @@ p { margin: 0; }
 .price-card .per { color: var(--muted); }
 .price-card ul { list-style: none; padding: 0; margin: 20px 0; text-align: left; display: inline-block; }
 .price-card li { padding: 7px 0; color: var(--ink); font-size: 14px; }
-.price-card li::before { content: '✓'; color: var(--ok); font-weight: 800; margin-right: 10px; }
+.price-card li::before { content: '✓'; color: var(--accent); font-weight: 800; margin-right: 10px; }
 .land-foot { border-top: 1px solid var(--line); padding: 26px; text-align: center; color: var(--muted); font-size: 13px; }
 
 /* ---------- Phone mockup (WhatsApp) ---------- */
@@ -250,7 +256,7 @@ p { margin: 0; }
 /* ---------- Misc ---------- */
 .empty { text-align: center; color: var(--muted); padding: 30px; font-size: 14px; }
 .divider { height: 1px; background: var(--line); margin: 18px 0; }
-.check { color: var(--ok); font-weight: 800; }
+.check { color: var(--accent); font-weight: 800; }
 .csv-hint { font-size: 12px; color: var(--muted); margin-top: 6px; }
 .flex { display: flex; gap: 10px; align-items: center; }
 .flex.wrap { flex-wrap: wrap; }
@@ -282,4 +288,109 @@ p { margin: 0; }
 }
 
 /* ---------- Flex helpers ---------- */
-.flex.col { flex-direction: column; } 
+.flex.col { flex-direction: column; }
+
+/* ---------- Skeletons ---------- */
+@keyframes skeleton-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+.skeleton {
+  background: #e5e7eb;
+  border-radius: 10px;
+  animation: skeleton-pulse 1.4s ease-in-out infinite;
+}
+.skeleton-stat { height: 96px; }
+.skeleton-chart { height: 380px; border-radius: var(--radius); }
+.skeleton-col { height: 280px; border-radius: var(--radius); }
+
+/* ---------- Onboarding steps ---------- */
+.onb-steps {
+  display: flex; gap: 8px; margin: 16px 0 8px; flex-wrap: wrap;
+}
+.onb-step {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 12px; font-weight: 700; color: var(--muted);
+  padding: 6px 10px; border-radius: 999px; background: var(--bg-soft); border: 1px solid var(--line);
+}
+.onb-step.active { color: var(--accent-dark); background: var(--accent-soft); border-color: transparent; }
+.onb-step.done { color: var(--accent-dark); background: var(--accent-soft); border-color: transparent; }
+.onb-step-num {
+  width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center;
+  font-size: 11px; background: #fff; border: 1px solid var(--line);
+}
+.onb-step.active .onb-step-num, .onb-step.done .onb-step-num {
+  background: var(--accent); color: #fff; border-color: var(--accent);
+}
+.onb-current { font-size: 14px; font-weight: 700; color: var(--ink); margin-top: 6px; }
+
+/* ---------- Editorial auth / onboarding (not dashboard) ---------- */
+.editorial-shell {
+  min-height: 100vh;
+  color: var(--ink);
+  background-color: var(--cream);
+  background-image:
+    radial-gradient(ellipse 90% 70% at -8% -12%, color-mix(in srgb, var(--bg-gradient-start) 72%, transparent) 0%, transparent 58%),
+    radial-gradient(ellipse 85% 70% at 108% 118%, color-mix(in srgb, var(--bg-gradient-end) 88%, transparent) 0%, transparent 54%),
+    radial-gradient(ellipse 50% 42% at 88% 6%, color-mix(in srgb, var(--bg-gradient-end) 38%, transparent) 0%, transparent 48%);
+}
+.editorial-shell h1,
+.editorial-shell h2 {
+  font-family: var(--font-display);
+  font-weight: 500;
+  letter-spacing: -0.02em;
+}
+.editorial-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 10px;
+}
+.geo-accent { color: var(--accent-line); flex: 0 0 auto; }
+
+.app-shell h1, .app-shell h2, .app-shell h3 {
+  font-family: var(--font);
+}
+
+/* ---------- AI insights ---------- */
+.ai-insights {
+  background: linear-gradient(180deg, var(--accent-soft) 0%, var(--cream) 48%);
+  border-left: 4px solid var(--accent);
+}
+.ai-insights-title { display: flex; align-items: center; gap: 8px; }
+.ai-insights-title svg { color: var(--accent); }
+.ai-insights-block { margin-top: 14px; }
+.ai-insights-block:first-of-type { margin-top: 0; }
+.ai-insights-kicker {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+.ai-issue {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px;
+  background: #fff;
+}
+.ai-issue.complaint { border-left: 3px solid var(--warn); background: var(--warn-soft); }
+.ai-issue.suggestion { border-left: 3px solid var(--accent); background: var(--accent-soft); }
+.ai-issue.read { background: #fff; }
+
+/* ---------- WhatsApp delivery ticks ---------- */
+.wa-ticks {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 11px; font-weight: 700; color: var(--muted); margin-left: auto;
+}
+.wa-ticks.failed { color: var(--warn); }
+.wa-ticks.read { color: var(--accent); }
+.wa-ticks.delivered, .wa-ticks.sent { color: var(--muted); }
+.wa-ticks svg { flex: 0 0 auto; }
+.wa-ticks-label { white-space: nowrap; } 

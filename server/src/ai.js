@@ -128,30 +128,47 @@ export async function ensureCurrentSummaryRow(businessId, periodStart, periodEnd
   return row;
 }
 
-export function issuesFromRow(row) {
-  if (!row) return [];
-  return Array.isArray(row.issues) ? row.issues : [];
+export function issueKindOf(issue) {
+  return issue?.kind === 'suggestion' ? 'suggestion' : 'complaint';
 }
 
-export async function firstRunClustering(businessId, negativeReviews) {
+export function inferFeedbackKind(review) {
+  if (review?.kind === 'suggestion' || review?.kind === 'complaint') return review.kind;
+  if (Number(review?.rating) >= 4 && review?.source === 'internal') return 'suggestion';
+  return 'complaint';
+}
+
+export function issuesFromRow(row) {
+  if (!row) return [];
+  return (Array.isArray(row.issues) ? row.issues : []).map((i) => ({
+    ...i,
+    kind: issueKindOf(i),
+  }));
+}
+
+export async function firstRunClustering(businessId, items, issueKind = 'complaint') {
   const db = getDb();
-  if (!negativeReviews.length) {
+  const kindLabel = issueKind === 'suggestion' ? 'suggestion' : 'complaint';
+  if (!items.length) {
     await ensureCurrentSummaryRow(businessId);
-    return [];
+    return issuesFromRow(await getCurrentSummaryRow(businessId));
   }
-  const items = negativeReviews.slice(0, 60).map((r) => ({ id: r.id, rating: r.rating, text: (r.text || '').slice(0, 600) }));
+  const payloadItems = items.slice(0, 60).map((r) => ({ id: r.id, rating: r.rating, text: (r.text || '').slice(0, 600) }));
   const { data: bizRow } = await db.from('businesses').select('category').eq('id', businessId).maybeSingle();
-  const kind = bizRow?.category === 'gym' ? 'gym' : 'restaurant';
-  const prompt = `You cluster negative ${kind} reviews into distinct underlying issues. Use semantic similarity, NOT keyword matching: two reviews in completely different words can be the same issue.\n\nReviews (JSON):\n${JSON.stringify(items)}\n\nReturn ONLY JSON: {"issues":[{"theme":"short label, e.g. Slow service during peak hours","improvement":"one concrete fix the owner can do","review_ids":["<ids from input>"]}]}\nRules: every input review id must appear in exactly one issue. Max 8 issues. Keep theme under 60 chars, improvement under 200 chars.`;
-  let issues = [];
+  const biz = bizRow?.category === 'gym' ? 'gym' : 'restaurant';
+  const prompt = kindLabel === 'suggestion'
+    ? `You cluster happy-customer SUGGESTIONS for a ${biz} into distinct ideas. These are NOT complaints. Use semantic similarity, NOT keyword matching. Never merge a suggestion with a complaint theme.\n\nSuggestions (JSON):\n${JSON.stringify(payloadItems)}\n\nReturn ONLY JSON: {"issues":[{"theme":"short label for the idea","improvement":"how the owner could act on this idea","review_ids":["<ids from input>"]}]}\nRules: every input id must appear in exactly one issue. Max 8 issues. Keep theme under 60 chars, improvement under 200 chars. kind is always suggestion.`
+    : `You cluster ${biz} COMPLAINTS (negative Google reviews and private WhatsApp complaints) into distinct underlying problems. Use semantic similarity, NOT keyword matching. Never treat these as suggestions.\n\nComplaints (JSON):\n${JSON.stringify(payloadItems)}\n\nReturn ONLY JSON: {"issues":[{"theme":"short label, e.g. Slow service during peak hours","improvement":"one concrete fix the owner can do","review_ids":["<ids from input>"]}]}\nRules: every input id must appear in exactly one issue. Max 8 issues. Keep theme under 60 chars, improvement under 200 chars.`;
+  let clustered = [];
   try {
     const out = await llmJson(prompt, { maxTokens: 3000 });
     const parsed = safeJsonParse(out, null);
     const raw = parsed?.issues || [];
     const now = new Date().toISOString();
-    issues = raw.slice(0, 8).map((it) => ({
+    clustered = raw.slice(0, 8).map((it) => ({
       id: newIssueId(),
-      theme: String(it.theme || 'Issue').slice(0, 80),
+      kind: kindLabel,
+      theme: String(it.theme || (kindLabel === 'suggestion' ? 'Suggestion' : 'Issue')).slice(0, 80),
       improvement: String(it.improvement || '').slice(0, 300),
       first_seen: now,
       occurrences: Array.isArray(it.review_ids) ? it.review_ids.length : 0,
@@ -166,13 +183,15 @@ export async function firstRunClustering(businessId, negativeReviews) {
   const periodStart = new Date(Date.now() - 365 * 86400000).toISOString();
   const periodEnd = new Date().toISOString();
   const existing = await getCurrentSummaryRow(businessId);
+  const keep = issuesFromRow(existing).filter((i) => issueKindOf(i) !== kindLabel);
+  const issues = [...keep, ...clustered];
   const payload = {
     issues,
     period_start: periodStart,
     period_end: periodEnd,
-    review_count: negativeReviews.length,
-    summary_text: issues.map((i) => `${i.theme}: ${i.improvement}`).join('\n'),
-    areas_of_improvement: issues.map((i) => i.improvement).join('\n'),
+    review_count: items.length,
+    summary_text: issues.map((i) => `${i.kind}: ${i.theme}: ${i.improvement}`).join('\n'),
+    areas_of_improvement: issues.filter((i) => i.kind === 'complaint').map((i) => i.improvement).join('\n'),
     is_read: false,
   };
   if (existing) {
@@ -187,7 +206,7 @@ export async function firstRunClustering(businessId, negativeReviews) {
   }
 
   const reviewToIssue = new Map();
-  for (const iss of issues) {
+  for (const iss of clustered) {
     for (const rid of iss.example_review_ids || []) reviewToIssue.set(rid, iss.id);
   }
   for (const [rid, iid] of reviewToIssue) {
@@ -202,14 +221,32 @@ export async function classifyOneReview(businessId, review) {
   const db = getDb();
   const current = await getCurrentSummaryRow(businessId);
   const issues = issuesFromRow(current);
+  const issueKind = inferFeedbackKind(review);
   const reviewText = String(review.text || review.complaint || '').slice(0, 800);
   if (!reviewText.trim()) {
-    return { decision: issues.length ? 'repeated' : 'new_issue', issueId: issues[0]?.id || null };
+    const same = issues.filter((i) => issueKindOf(i) === issueKind);
+    return { decision: same.length ? 'repeated' : 'new_issue', issueId: same[0]?.id || null, kind: issueKind };
   }
-  const known = issues.map((i) => ({ id: i.id, theme: i.theme, improvement: i.improvement }));
+  const known = issues
+    .filter((i) => issueKindOf(i) === issueKind)
+    .map((i) => ({ id: i.id, kind: i.kind, theme: i.theme, improvement: i.improvement }));
   const { data: bizRow } = await db.from('businesses').select('category').eq('id', businessId).maybeSingle();
-  const kind = bizRow?.category === 'gym' ? 'gym' : 'restaurant';
-  const prompt = `You decide if a new negative ${kind} review is the SAME underlying problem as a known issue, or a genuinely NEW issue. Use semantic meaning, NOT keywords.\n\nKnown issues (JSON):\n${JSON.stringify(known)}\n\nNew review:\n{"id":${JSON.stringify(review.id)},"rating":${JSON.stringify(review.rating)},"text":${JSON.stringify(reviewText)}}\n\nReturn ONLY JSON: {"decision":"repeated"|"new_issue","issue_id":"<matching known id if repeated, else null>","theme":"<short label, required if new_issue>","improvement":"<one concrete fix, required if new_issue>"}`;
+  const biz = bizRow?.category === 'gym' ? 'gym' : 'restaurant';
+  const prompt = `You classify one piece of ${biz} customer feedback.
+
+This item is already tagged kind="${issueKind}".
+- complaint: a negative Google review or a WhatsApp unhappy-path private complaint. Never call it a suggestion.
+- suggestion: a happy customer's idea from WhatsApp. Never call it a complaint.
+
+Deduplicate ONLY against known issues of the SAME kind. A complaint and a suggestion about similar topics must stay separate.
+
+Known same-kind issues (JSON):
+${JSON.stringify(known)}
+
+New item:
+{"id":${JSON.stringify(review.id)},"kind":${JSON.stringify(issueKind)},"rating":${JSON.stringify(review.rating)},"text":${JSON.stringify(reviewText)}}
+
+Return ONLY JSON: {"decision":"repeated"|"new_issue","issue_id":"<matching known id if repeated, else null>","theme":"<short label, required if new_issue>","improvement":"<owner action, required if new_issue>"}`;
   let result;
   try {
     const out = await llmJson(prompt, { maxTokens: 600 });
@@ -223,9 +260,12 @@ export async function classifyOneReview(businessId, review) {
   }
 
   if (result.decision === 'repeated') {
-    const match = issues.find((i) => i.id === result.issue_id) || issues[0];
+    const same = issues.filter((i) => issueKindOf(i) === issueKind);
+    const match = same.find((i) => i.id === result.issue_id) || same[0];
     if (!match) {
-      return await appendNewIssue(businessId, review, 'Negative experience', 'Follow up with the customer and fix the reported problem.');
+      const fallbackTheme = issueKind === 'suggestion' ? 'Customer suggestion' : 'Negative experience';
+      const fallbackImp = issueKind === 'suggestion' ? 'Consider this idea from a happy customer.' : 'Follow up with the customer and fix the reported problem.';
+      return await appendNewIssue(businessId, review, fallbackTheme, fallbackImp, issueKind);
     }
     match.occurrences = (match.occurrences || 0) + 1;
     if (!match.example_review_ids.includes(review.id)) {
@@ -233,19 +273,20 @@ export async function classifyOneReview(businessId, review) {
     }
     if (current) await db.from('review_summaries').update({ issues, period_end: new Date().toISOString() }).eq('id', current.id);
     await db.from('reviews').update({ ai_flag: 'repeated', ai_issue_id: match.id }).eq('id', review.id).eq('business_id', businessId);
-    return { decision: 'repeated', issueId: match.id };
+    return { decision: 'repeated', issueId: match.id, kind: issueKind };
   }
 
-  return await appendNewIssue(businessId, review, result.theme, result.improvement);
+  return await appendNewIssue(businessId, review, result.theme, result.improvement, issueKind);
 }
 
-async function appendNewIssue(businessId, review, theme, improvement) {
+async function appendNewIssue(businessId, review, theme, improvement, issueKind = 'complaint') {
   const db = getDb();
   const current = await ensureCurrentSummaryRow(businessId);
   const issues = issuesFromRow(current);
   const iss = {
     id: newIssueId(),
-    theme: String(theme || 'New issue').slice(0, 80),
+    kind: issueKind === 'suggestion' ? 'suggestion' : 'complaint',
+    theme: String(theme || (issueKind === 'suggestion' ? 'New suggestion' : 'New issue')).slice(0, 80),
     improvement: String(improvement || 'Follow up with the customer.').slice(0, 300),
     first_seen: new Date().toISOString(),
     occurrences: 1,
@@ -255,7 +296,7 @@ async function appendNewIssue(businessId, review, theme, improvement) {
   const next = [...issues, iss];
   await db.from('review_summaries').update({ issues: next, period_end: new Date().toISOString(), is_read: false }).eq('id', current.id);
   await db.from('reviews').update({ ai_flag: 'new_issue', ai_issue_id: iss.id }).eq('id', review.id).eq('business_id', businessId);
-  return { decision: 'new_issue', issueId: iss.id };
+  return { decision: 'new_issue', issueId: iss.id, kind: iss.kind };
 }
 
 export async function weeklyUpdateBusiness(businessId) {
@@ -263,20 +304,23 @@ export async function weeklyUpdateBusiness(businessId) {
   const current = await getCurrentSummaryRow(businessId);
   if (!current) {
     const since = new Date(Date.now() - 365 * 86400000).toISOString();
-    const { data } = await db.from('reviews').select('*').eq('business_id', businessId).lt('rating', 4).gte('created_at', since).order('created_at', { ascending: true }).limit(200);
-    const negatives = (data || []).filter((r) => !r.ai_flag);
-    if (!negatives.length) { await ensureCurrentSummaryRow(businessId); return { processed: 0 }; }
+    const { data } = await db.from('reviews').select('*').eq('business_id', businessId).gte('created_at', since).order('created_at', { ascending: true }).limit(200);
+    const all = (data || []).filter((r) => !r.ai_flag);
+    const negatives = all.filter((r) => Number(r.rating) < 4);
+    const suggestions = all.filter((r) => Number(r.rating) >= 4 && r.source === 'internal');
+    if (!negatives.length && !suggestions.length) { await ensureCurrentSummaryRow(businessId); return { processed: 0 }; }
     try {
-      await firstRunClustering(businessId, negatives.map((r) => ({ id: r.id, rating: r.rating, text: r.text })));
-      return { processed: negatives.length, firstRun: true };
+      if (negatives.length) await firstRunClustering(businessId, negatives.map((r) => ({ id: r.id, rating: r.rating, text: r.text })), 'complaint');
+      if (suggestions.length) await firstRunClustering(businessId, suggestions.map((r) => ({ id: r.id, rating: r.rating, text: r.text })), 'suggestion');
+      return { processed: negatives.length + suggestions.length, firstRun: true };
     } catch { return { processed: 0, error: 'AI failed, retry next run' }; }
   }
-  const { data } = await db.from('reviews').select('*').eq('business_id', businessId).lt('rating', 4).is('ai_flag', null).order('created_at', { ascending: true }).limit(100);
-  const fresh = data || [];
+  const { data } = await db.from('reviews').select('*').eq('business_id', businessId).is('ai_flag', null).order('created_at', { ascending: true }).limit(100);
+  const fresh = (data || []).filter((r) => Number(r.rating) < 4 || (r.source === 'internal' && Number(r.rating) >= 4));
   let processed = 0;
   for (const r of fresh) {
     try {
-      await classifyOneReview(businessId, { id: r.id, rating: r.rating, text: r.text });
+      await classifyOneReview(businessId, { id: r.id, rating: r.rating, text: r.text, source: r.source, kind: inferFeedbackKind(r) });
       processed++;
     } catch {
       break;
@@ -292,10 +336,13 @@ export async function weeklyUpdateBusiness(businessId) {
 export async function runFirstClusteringForBusiness(businessId) {
   const db = getDb();
   const since = new Date(Date.now() - 365 * 86400000).toISOString();
-  const { data } = await db.from('reviews').select('*').eq('business_id', businessId).lt('rating', 4).gte('created_at', since).order('created_at', { ascending: true }).limit(200);
-  const negatives = (data || []).filter((r) => !r.ai_flag).map((r) => ({ id: r.id, rating: r.rating, text: r.text }));
-  if (negatives.length) await firstRunClustering(businessId, negatives);
-  else {
+  const { data } = await db.from('reviews').select('*').eq('business_id', businessId).gte('created_at', since).order('created_at', { ascending: true }).limit(200);
+  const all = (data || []).filter((r) => !r.ai_flag);
+  const negatives = all.filter((r) => Number(r.rating) < 4).map((r) => ({ id: r.id, rating: r.rating, text: r.text }));
+  const suggestions = all.filter((r) => Number(r.rating) >= 4 && r.source === 'internal').map((r) => ({ id: r.id, rating: r.rating, text: r.text }));
+  if (negatives.length) await firstRunClustering(businessId, negatives, 'complaint');
+  if (suggestions.length) await firstRunClustering(businessId, suggestions, 'suggestion');
+  if (!negatives.length && !suggestions.length) {
     const cur = await getCurrentSummaryRow(businessId);
     if (!cur) {
       await db.from('review_summaries').insert({

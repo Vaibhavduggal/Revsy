@@ -1,4 +1,4 @@
-import { detectSentimentReply, isNoComplaintReply, extractInboundMessages } from './src/sentimentFlow.js';
+import { detectSentimentReply, isNoComplaintReply, extractInboundMessages, extractDeliveryStatuses, shouldAdvanceDelivery } from './src/sentimentFlow.js';
 
 function assert(cond, msg) {
   if (!cond) throw new Error('ASSERT FAIL: ' + msg);
@@ -22,5 +22,17 @@ assert(parsed.length === 1 && parsed[0].text === '😊' && parsed[0].phone.endsW
 
 const aisensy = extractInboundMessages({ mobile: '919811110001', text: 'Please add more squat racks' });
 assert(aisensy[0].text.includes('squat'), 'aisensy parse');
+
+const metaStatus = extractDeliveryStatuses({
+  entry: [{ changes: [{ value: { statuses: [{ recipient_id: '919988777999', status: 'delivered' }] } }] }],
+});
+assert(metaStatus.length === 1 && metaStatus[0].status === 'delivered', 'meta delivery status');
+
+const aisensyStatus = extractDeliveryStatuses({ mobile: '919811110001', status: 'read' });
+assert(aisensyStatus[0].status === 'read', 'aisensy read receipt');
+
+assert(shouldAdvanceDelivery('sent', 'read') === true, 'advance sent to read');
+assert(shouldAdvanceDelivery('read', 'sent') === false, 'do not regress read to sent');
+assert(shouldAdvanceDelivery('sent', 'failed') === true, 'failed after sent');
 
 console.log('sentimentFlow unit tests passed');

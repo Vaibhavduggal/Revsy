@@ -4,24 +4,25 @@
 @theme inline {
   --font-serif: Georgia, 'Times New Roman', serif;
   --color-background: #ffffff;
-  --color-foreground: #1f2430;
-  --color-card: #ffffff;
-  --color-card-foreground: #1f2430;
-  --color-popover: #ffffff;
-  --color-popover-foreground: #1f2430;
-  --color-primary: #e63946;
-  --color-primary-foreground: #ffffff;
+  --font-serif: 'Fraunces', Georgia, 'Times New Roman', serif;
+  --color-foreground: #1A1A1F;
+  --color-card: #FAFAF8;
+  --color-card-foreground: #1A1A1F;
+  --color-popover: #FAFAF8;
+  --color-popover-foreground: #1A1A1F;
+  --color-primary: #6B6478;
+  --color-primary-foreground: #FAFAF8;
   --color-secondary: #f7f8fa;
-  --color-secondary-foreground: #1f2430;
+  --color-secondary-foreground: #1A1A1F;
   --color-muted: #f7f8fa;
   --color-muted-foreground: #6b7280;
-  --color-accent: #f7f8fa;
-  --color-accent-foreground: #1f2430;
-  --color-destructive: #dc2626;
+  --color-accent: #EDEAF0;
+  --color-accent-foreground: #534E5E;
+  --color-destructive: #C2705A;
   --color-destructive-foreground: #ffffff;
-  --color-border: #ececf1;
-  --color-input: #ececf1;
-  --color-ring: #e63946;
+  --color-border: #E5E7EB;
+  --color-input: #E5E7EB;
+  --color-ring: #6B6478;
   --color-teal-500: #14b8a6;
   --color-pink-500: #ec4899;
   --color-green-500: #16a34a;
@@ -40,11 +41,11 @@
 }
 
 :root {
-  --primary: #e63946;
-  --primary-foreground: #ffffff;
+  --primary: #6B6478;
+  --primary-foreground: #FAFAF8;
   --secondary: #f7f8fa;
-  --secondary-foreground: #1f2430;
-  --ring: #e63946;
+  --secondary-foreground: #1A1A1F;
+  --ring: #6B6478;
   --destructive-foreground: #ffffff;
   --color-destructive-foreground: #ffffff;
 }

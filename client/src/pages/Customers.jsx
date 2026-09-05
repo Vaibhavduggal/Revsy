@@ -123,6 +123,7 @@ function CustomerDrawer({ customer, business, onClose, onChanged, copy: copyProp
               <div>
                 <h2 style={{ margin: 0 }}>{detail.customer.name}</h2>
                 <div className="muted" style={{ fontSize: 13 }}>{detail.customer.phone}</div>
+                <WaTicks status={detail.customer.waDeliveryStatus} />
               </div>
               <span className={`badge ${stage}`} style={{ marginLeft: 'auto' }}>{stageLabel(stage)}</span>
             </div>
@@ -189,6 +190,31 @@ function stageLabel(id) {
   return STAGES.find((s) => s.id === id)?.label || id;
 }
 
+function WaTicks({ status }) {
+  if (!status) return null;
+  const label = status === 'queued' ? 'Queued'
+    : status === 'sent' ? 'Sent'
+    : status === 'delivered' ? 'Delivered'
+    : status === 'read' ? 'Read'
+    : status === 'failed' ? 'Failed'
+    : null;
+  if (!label) return null;
+  const ticks = status === 'delivered' || status === 'read' ? 2 : status === 'sent' ? 1 : 0;
+  return (
+    <span className={`wa-ticks ${status}`} title={`WhatsApp: ${label}`}>
+      {status === 'failed' ? (
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><path d="M18 6L6 18M6 6l12 12" /></svg>
+      ) : ticks > 0 ? (
+        <svg width="16" height="12" viewBox="0 0 24 16" fill="none" stroke="currentColor" strokeWidth="2.2">
+          <path d="M2 9l4 4 8-9" />
+          {ticks === 2 && <path d="M8 9l4 4 8-9" />}
+        </svg>
+      ) : null}
+      <span className="wa-ticks-label">{label}</span>
+    </span>
+  );
+}
+
 function CustomerCard({ c, onOpen }) {
   const stage = c.stage || 'to_send';
   return (
@@ -204,6 +230,7 @@ function CustomerCard({ c, onOpen }) {
       <div className="card-foot">
         <span className={`badge ${stage}`}>{stageLabel(stage)}</span>
         {c.hasCustomMessage && <span className="badge reviewed sm">Custom msg</span>}
+        <WaTicks status={c.waDeliveryStatus} />
       </div>
     </button>
   );

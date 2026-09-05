@@ -2,6 +2,7 @@ import { useNavigate } from 'react-router-dom';
 import { Logo } from '../components/Icons.jsx';
 import ReviewMotif from '../components/marketing/ReviewMotif.jsx';
 import RupeeCoin from '../components/marketing/RupeeCoin.jsx';
+import GeoAccent from '../components/marketing/GeoAccent.jsx';
 import '../styles-marketing.css';
 
 const FEATURES = [
@@ -24,7 +25,7 @@ const FEATURES = [
   {
     icon: '◎',
     title: 'AI issue detection',
-    body: 'Recurring problems in negative reviews are grouped into clear themes — not one-off rants.',
+    body: 'Complaints and suggestions from Google and WhatsApp are clustered into themes the owner can act on.',
     stat: 'Auto',
     statLabel: 'recurring issue clustering',
     href: '#features',
@@ -76,10 +77,11 @@ export default function Landing() {
       <section className="mkt-hero">
         <div className="mkt-container mkt-hero-inner">
           <div className="mkt-hero-copy">
+            <p className="editorial-kicker"><GeoAccent /> For restaurants &amp; gyms</p>
             <h1>Get more Google reviews, automatically</h1>
             <p className="mkt-lead">
               Revsy sends WhatsApp review requests after each visit, syncs your Google reviews,
-              and surfaces recurring issues from negative feedback — so you fix what matters.
+              and surfaces recurring complaints and suggestions — so you fix what matters.
             </p>
             <div className="mkt-hero-actions">
               <button type="button" className="mkt-btn mkt-btn-primary mkt-btn-lg" onClick={() => navigate('/signup')}>
@@ -109,7 +111,7 @@ export default function Landing() {
 
       <section className="mkt-features" id="features">
         <div className="mkt-container">
-          <h2 className="mkt-section-title">Everything you need to grow reviews — and learn from them</h2>
+          <h2 className="mkt-section-title"><GeoAccent /> Everything you need to grow reviews — and learn from them</h2>
           <div className="mkt-feature-grid">
             {FEATURES.map((f) => (
               <article key={f.title} className="mkt-feature-card">
@@ -161,7 +163,7 @@ export default function Landing() {
       <section className="mkt-dark">
         <div className="mkt-container mkt-dark-inner">
           <div className="mkt-dark-copy">
-            <p className="mkt-eyebrow">For business owners</p>
+            <p className="mkt-eyebrow"><GeoAccent shape="circle" /> For business owners</p>
             <h2>Set up in minutes — no technical knowledge needed</h2>
             <p>Connect your accounts once. Revsy handles the rest.</p>
             <div style={{ marginTop: 20 }}>

@@ -7,8 +7,8 @@ import { classifyOneReview, weeklyUpdateBusiness, getCurrentSummaryRow, issuesFr
 import { listGoogleLocations, saveSelectedLocation, autoSelectLocationIfSingle, syncGoogleReviewsForBusiness } from './google.js';
 import { buildSupabaseGoogleAuthUrl, getPublicSupabaseConfig, signOAuthState, verifyOAuthState, verifySupabaseAccessToken } from './supabase-auth.js';
 import { getCopy, defaultTemplateFor, messagePresetsFor, normalizeCategory } from './categoryCopy.js';
-import { extractInboundMessages } from './sentimentFlow.js';
-import { handleCustomerInbound, handleInboundText } from './inbound.js';
+import { extractInboundMessages, extractDeliveryStatuses } from './sentimentFlow.js';
+import { handleCustomerInbound, handleInboundText, applyDeliveryStatus } from './inbound.js';
 
 const router = Router();
 
@@ -130,10 +130,25 @@ async function getRequestsForBusiness(businessId) {
 }
 
 // Helper: fetch all customers for a business
+function deriveWaDeliveryStatus(c, failedSet) {
+  if (c.waDeliveryStatus) return c.waDeliveryStatus;
+  if (failedSet.has(c.id)) return 'failed';
+  if (c.lastRequestStatus === 'Scheduled') return 'queued';
+  if (c.lastRequestStatus === 'Sent' || c.lastRequestStatus === 'Opened' || c.lastRequestStatus === 'Reviewed') return 'sent';
+  return null;
+}
+
+// Helper: fetch all customers for a business
 async function getCustomersForBusiness(businessId) {
   const db = getDb();
   const { data } = await db.from('customers').select('*').eq('business_id', businessId);
-  return (data || []).map(mapCustomer);
+  const { data: failed } = await db.from('pending_sends').select('customer_id').eq('business_id', businessId).eq('status', 'failed');
+  const failedSet = new Set((failed || []).map((r) => r.customer_id));
+  return (data || []).map((row) => {
+    const c = mapCustomer(row);
+    c.waDeliveryStatus = deriveWaDeliveryStatus(c, failedSet);
+    return c;
+  });
 }
 
 // Helper: fetch all reviews for a business
@@ -202,6 +217,7 @@ function verifyWhatsappWebhook(req, res) {
 
 async function processWebhookPayload(payload, res) {
   const messages = extractInboundMessages(payload);
+  const statuses = extractDeliveryStatuses(payload);
   const results = [];
   for (const msg of messages) {
     try {
@@ -210,7 +226,16 @@ async function processWebhookPayload(payload, res) {
       results.push({ ok: false, phone: msg.phone, error: e.message });
     }
   }
-  res.json({ ok: true, received: messages.length, results });
+  let deliveries = 0;
+  for (const st of statuses) {
+    try {
+      const r = await applyDeliveryStatus(st.phone, st.status);
+      if (r?.ok && !r.skipped) deliveries += 1;
+    } catch (e) {
+      results.push({ ok: false, phone: st.phone, error: e.message });
+    }
+  }
+  res.json({ ok: true, received: messages.length, deliveries, results });
 }
 
 router.get('/webhooks/whatsapp', verifyWhatsappWebhook);
@@ -382,6 +407,8 @@ router.get('/customers/:id', auth, async (req, res) => {
   const { data } = await db.from('customers').select('*').eq('id', req.params.id).eq('business_id', req.business.id).single();
   if (!data) return res.status(404).json({ error: 'Customer not found' });
   const customer = mapCustomer(data);
+  const { data: failedRow } = await db.from('pending_sends').select('id').eq('customer_id', customer.id).eq('status', 'failed').limit(1);
+  customer.waDeliveryStatus = deriveWaDeliveryStatus(customer, new Set(failedRow?.length ? [customer.id] : []));
   const { data: reqsData } = await db.from('requests').select('*').eq('customer_id', customer.id).order('created_at', { ascending: false });
   const requests = (reqsData || []).map(mapRequest);
   const { data: fbData } = await db.from('feedback').select('*').eq('customer_id', customer.id).single();
@@ -536,7 +563,7 @@ router.post('/customers/:id/reset', auth, async (req, res) => {
   const { data: custData } = await db.from('customers').select('*').eq('id', req.params.id).eq('business_id', req.business.id).single();
   if (!custData) return res.status(404).json({ error: 'Customer not found' });
   const customer = mapCustomer(custData);
-  await db.from('customers').update({ stage: 'to_send', sentiment: null, complaint: '', wa_step: 'idle', wa_history: [] }).eq('id', customer.id);
+  await db.from('customers').update({ stage: 'to_send', sentiment: null, complaint: '', wa_step: 'idle', wa_history: [], wa_delivery_status: null }).eq('id', customer.id);
   await db.from('feedback').delete().eq('customer_id', customer.id);
   await db.from('reviews').delete().eq('customer_id', customer.id);
   await db.from('requests').update({ status: 'Scheduled', reaction: null, opened_at: null, reviewed_at: null }).eq('customer_id', customer.id);
@@ -1258,7 +1285,7 @@ function toBusinessRow(obj) {
   return { id: obj.id, name: obj.name, owner_email: obj.ownerEmail, password: obj.passwordHash, is_demo: obj.isDemo, google_review_link: obj.googleReviewLink, feedback_link: obj.feedbackLink, address: obj.address, phone: obj.phone, description: obj.description, message_template: obj.messageTemplate, delay_seconds: obj.delaySeconds, demo_mode: obj.demoMode, subscription_status: obj.subscriptionStatus, created_at: obj.createdAt, place_id: obj.placeId, whatsapp_bsp: obj.whatsapp?.bsp || '', whatsapp_api_key: obj.whatsapp?.apiKey || '', whatsapp_phone_number_id: obj.whatsapp?.phoneNumberId || '', whatsapp_status: obj.whatsapp?.status || 'not_connected', reviews_received: obj.reviewsReceived || 0, google_access_token: obj.googleAccessToken || null, google_refresh_token: obj.googleRefreshToken || null, google_token_expires_at: obj.googleTokenExpiresAt || null, google_connected: !!obj.googleConnected, google_account_email: obj.googleAccountEmail || null, onboarding_completed: !!obj.onboardingCompleted, approval_status: obj.approvalStatus || 'pending_approval', pre_approved: !!obj.preApproved, approved_at: obj.approvedAt || null, rejected_at: obj.rejectedAt || null, category: obj.category === 'gym' ? 'gym' : 'restaurant', category_set: !!obj.categorySet };
 }
 function toCustomerRow(obj) {
-  return { id: obj.id, business_id: obj.businessId, name: obj.name, phone: obj.phone, custom_message: obj.customMessage || '', stage: obj.stage || 'to_send', sentiment: obj.sentiment || null, complaint: obj.complaint || '', created_at: obj.createdAt, last_request_at: obj.lastRequestAt, last_request_status: obj.lastRequestStatus };
+  return { id: obj.id, business_id: obj.businessId, name: obj.name, phone: obj.phone, custom_message: obj.customMessage || '', stage: obj.stage || 'to_send', sentiment: obj.sentiment || null, complaint: obj.complaint || '', created_at: obj.createdAt, last_request_at: obj.lastRequestAt, last_request_status: obj.lastRequestStatus, wa_delivery_status: obj.waDeliveryStatus || null };
 }
 function toRequestRow(obj) {
   return { id: obj.id, business_id: obj.businessId, customer_id: obj.customerId, customer_name: obj.customerName, phone: obj.phone, message: obj.message, status: obj.status, reaction: obj.reaction || null, feedback_text: obj.feedbackText || null, created_at: obj.createdAt, sent_at: obj.sentAt, opened_at: obj.openedAt, reviewed_at: obj.reviewedAt };

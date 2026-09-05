@@ -27,10 +27,10 @@ export default function AdminLogin() {
   };
 
   return (
-    <div className="landing" style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', background: 'radial-gradient(900px 400px at 50% -10%, #eef2ff, #fff)' }}>
+    <div className="editorial-shell" style={{ display: 'grid', placeItems: 'center', padding: 24 }}>
       <div className="card" style={{ width: '100%', maxWidth: 380 }}>
         <div className="brand" style={{ justifyContent: 'center', marginBottom: 8 }}><Logo /><span>Revsy Admin</span></div>
-        <h2 style={{ textAlign: 'center', fontSize: 22 }}>Platform login</h2>
+        <h2 style={{ textAlign: 'center', fontSize: 28 }}>Platform login</h2>
         <p className="sub" style={{ textAlign: 'center', marginBottom: 18 }}>For Revsy staff only — manage client accounts</p>
         <form onSubmit={submit}>
           <div className="field">

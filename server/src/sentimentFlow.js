@@ -108,3 +108,67 @@ export function extractInboundMessages(payload) {
   walk(payload);
   return out;
 }
+
+const DELIVERY_RANK = { queued: 0, sent: 1, delivered: 2, read: 3, failed: 4 };
+
+export function normalizeDeliveryStatus(raw) {
+  const s = String(raw || '').toLowerCase().trim();
+  if (s === 'read' || s === 'seen' || s === 'opened') return 'read';
+  if (s === 'delivered' || s === 'delivery') return 'delivered';
+  if (s === 'sent' || s === 'accepted' || s === 'submitted' || s === 'queued') return s === 'queued' ? 'queued' : 'sent';
+  if (s === 'failed' || s === 'undelivered' || s === 'error' || s === 'rejected') return 'failed';
+  return null;
+}
+
+export function shouldAdvanceDelivery(prev, next) {
+  if (!next) return false;
+  if (!prev || prev === next) return true;
+  if (next === 'failed') return true;
+  if (prev === 'failed') return true;
+  return (DELIVERY_RANK[next] || 0) >= (DELIVERY_RANK[prev] || 0);
+}
+
+export function extractDeliveryStatuses(payload) {
+  const out = [];
+  const seen = new Set();
+  const push = (phone, status) => {
+    const p = digitsPhone(phone);
+    const st = normalizeDeliveryStatus(status);
+    if (!p || !st) return;
+    const key = `${p}:${st}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push({ phone: p, status: st });
+  };
+
+  const walk = (node) => {
+    if (!node || typeof node !== 'object') return;
+    if (Array.isArray(node)) {
+      node.forEach(walk);
+      return;
+    }
+
+    if (Array.isArray(node.statuses)) {
+      for (const st of node.statuses) {
+        if (!st || typeof st !== 'object') continue;
+        push(st.recipient_id || st.recipient || st.to || st.mobile || st.wa_id || st.phone, st.status);
+      }
+    }
+
+    const phone = node.recipient_id || node.recipient || node.destination || node.mobile || node.to || node.waId || node.wa_id;
+    if (phone && node.status) push(phone, node.status);
+
+    const event = String(node.eventType || node.event || node.type || '');
+    if (phone && /delivered|read|failed|sent|status/i.test(event)) {
+      push(phone, node.status || event);
+    }
+
+    if (Array.isArray(node.entry)) walk(node.entry);
+    if (Array.isArray(node.changes)) walk(node.changes);
+    if (node.value) walk(node.value);
+    if (node.data) walk(node.data);
+  };
+
+  walk(payload);
+  return out;
+}

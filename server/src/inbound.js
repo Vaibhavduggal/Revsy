@@ -9,7 +9,7 @@ import {
   SUGGESTION_THANKS,
   googleReviewAsk,
 } from './categoryCopy.js';
-import { detectSentimentReply, isNoComplaintReply, phoneTail } from './sentimentFlow.js';
+import { detectSentimentReply, isNoComplaintReply, phoneTail, shouldAdvanceDelivery } from './sentimentFlow.js';
 
 function newId(prefix) {
   return `${prefix}_${Date.now()}_${Math.floor(Math.random() * 1e6)}`;
@@ -69,9 +69,32 @@ async function feedComplaintToAi(business, customer, text, feedbackId) {
   };
   await db.from('reviews').insert(review);
   try {
-    await classifyOneReview(business.id, { id: reviewId, rating: 2, text, complaint: text });
+    await classifyOneReview(business.id, { id: reviewId, rating: 2, text, complaint: text, source: 'internal', kind: 'complaint' });
   } catch (e) {
     console.error('classify complaint failed (will retry on cron):', e.message);
+  }
+}
+
+async function feedSuggestionToAi(business, customer, text, feedbackId) {
+  const db = getDb();
+  const now = new Date().toISOString();
+  const reviewId = `rev_fb_${feedbackId}`;
+  const review = {
+    id: reviewId,
+    business_id: business.id,
+    customer_id: customer.id,
+    customer_name: customer.name,
+    rating: 5,
+    text,
+    source: 'internal',
+    created_at: now,
+    is_read: false,
+  };
+  await db.from('reviews').insert(review);
+  try {
+    await classifyOneReview(business.id, { id: reviewId, rating: 5, text, source: 'internal', kind: 'suggestion' });
+  } catch (e) {
+    console.error('classify suggestion failed (will retry on cron):', e.message);
   }
 }
 
@@ -90,6 +113,14 @@ async function markOpened(customer) {
     if (reqData.status === 'Sent' || reqData.status === 'Scheduled') updates.status = 'Opened';
     if (Object.keys(updates).length) await db.from('requests').update(updates).eq('id', reqData.id);
   }
+}
+
+export async function applyDeliveryStatus(phone, status) {
+  const customer = await findCustomerForInbound(phone);
+  if (!customer) return null;
+  if (!shouldAdvanceDelivery(customer.waDeliveryStatus, status)) return { ok: true, skipped: true, customerId: customer.id };
+  await persistCustomer(customer.id, { wa_delivery_status: status });
+  return { ok: true, customerId: customer.id, status };
 }
 
 export async function findCustomerForInbound(phone) {
@@ -213,6 +244,7 @@ export async function handleCustomerInbound(business, customer, text, { skipSend
       message: text,
       status: 'Suggestion',
     });
+    await feedSuggestionToAi(business, customer, text, fb.id);
     if (!skipSend) await deliver(business, { phone: customer.phone, message: SUGGESTION_THANKS, customerName: customer.name });
     return { step: 'done', sentiment: 'positive', suggestion: fb, googleLinkSent: false, replies, history };
   }

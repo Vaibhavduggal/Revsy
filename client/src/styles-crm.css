@@ -105,18 +105,18 @@
 .card-id { min-width: 0; }
 .card-name { font-size: 14px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .card-phone { font-size: 12px; color: var(--muted); }
-.card-foot { display: flex; align-items: center; gap: 6px; }
+.card-foot { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .sentiment-dot { margin-left: auto; font-size: 13px; }
 
 /* ---------- Badges (stage colors) ---------- */
 .badge.to_send { background: #eef2f7; color: #475569; }
-.badge.sent { background: #eef2ff; color: #4338ca; }
-.badge.opened { background: #fff4e5; color: var(--warn); }
+.badge.sent { background: var(--accent-soft); color: var(--accent-dark); }
+.badge.opened { background: var(--accent-soft); color: var(--accent-dark); }
 .badge.positive { background: var(--ok-soft); color: var(--ok); }
-.badge.negative { background: #fff1e6; color: var(--warn); }
+.badge.negative { background: var(--warn-soft); color: var(--warn); }
 .badge.reviewed { background: var(--accent-soft); color: var(--accent-dark); }
 .badge.sm { font-size: 11px; padding: 2px 8px; }
-.badge.neg { background: #fff1e6; color: var(--warn); }
+.badge.neg { background: var(--warn-soft); color: var(--warn); }
 
 /* ---------- Drawer (customer detail) ---------- */
 .drawer {
@@ -130,7 +130,7 @@
 .btn.green { background: var(--ok); }
 .btn.green:hover { background: #138a3e; }
 .btn.warn { background: var(--warn); }
-.btn.warn:hover { background: #b45309; }
+.btn.warn:hover { background: #b91c1c; }
 
 /* ---------- WhatsApp conversation (drawer / messages) ---------- */
 .wa-screen { background: #e5ddd3; border-radius: 12px; overflow: hidden; box-shadow: inset 0 0 0 1px #00000010; }

@@ -5,6 +5,35 @@ import { useToast } from '../components/useToast.jsx';
 import { getCopy } from '../utils/categoryCopy.js';
 import { useAuth } from '../auth-context.jsx';
 
+const ONB_STEPS = [
+  { n: 1, label: 'Business type' },
+  { n: 2, label: 'Connect Google' },
+  { n: 3, label: 'Admin approval' },
+  { n: 4, label: 'Connect WhatsApp' },
+];
+const ONB_TITLES = {
+  1: 'Step 1 of 4: Business type',
+  2: 'Step 2 of 4: Connect Google',
+  3: 'Step 3 of 4: Waiting for approval',
+  4: 'Step 4 of 4: Connect WhatsApp',
+};
+
+function OnboardingProgress({ current }) {
+  return (
+    <>
+      <div className="onb-current">{ONB_TITLES[current]}</div>
+      <div className="onb-steps" aria-label={`Step ${current} of 4`}>
+        {ONB_STEPS.map((s) => (
+          <div key={s.n} className={`onb-step ${s.n === current ? 'active' : ''} ${s.n < current ? 'done' : ''}`}>
+            <span className="onb-step-num">{s.n < current ? '✓' : s.n}</span>
+            {s.label}
+          </div>
+        ))}
+      </div>
+    </>
+  );
+}
+
 export default function Onboarding() {
   const nav = useNavigate();
   const { show, node } = useToast();
@@ -116,10 +145,11 @@ export default function Onboarding() {
     } catch (err) { show(err.message); }
   };
 
-  if (loading) return <div className="page"><div className="empty">Loading onboarding…</div></div>;
+  if (loading) return <div className="editorial-shell"><div className="page"><div className="empty">Loading onboarding…</div></div></div>;
 
   if (status?.approvalStatus === 'rejected') {
     return (
+      <div className="editorial-shell">
       <div className="page" style={{ maxWidth: 640 }}>
         <div className="card" style={{ borderLeft: '4px solid var(--warn)', background: 'var(--warn-soft)' }}>
           <h3>Not approved</h3>
@@ -127,13 +157,16 @@ export default function Onboarding() {
         </div>
         {node}
       </div>
+      </div>
     );
   }
 
   if (status?.approvalStatus === 'pending_approval' && status?.googleConnected && !status?.needsLocation) {
     return (
+      <div className="editorial-shell">
       <div className="page" style={{ maxWidth: 640 }}>
-        <div className="card" style={{ textAlign: 'center', padding: 40, borderLeft: '4px solid var(--accent)' }}>
+        <OnboardingProgress current={3} />
+        <div className="card" style={{ textAlign: 'center', padding: 40, borderLeft: '4px solid var(--accent)', marginTop: 16 }}>
           <h3>Waiting for admin approval</h3>
           <div className="sub" style={{ marginTop: 8 }}>
             Your Google account and review permissions are connected. {getCopy(status.category).approvalWait}
@@ -142,6 +175,7 @@ export default function Onboarding() {
           <div className="csv-hint" style={{ marginTop: 12 }}>Connected as {status.googleAccountEmail || 'your Google account'}</div>
         </div>
         {node}
+      </div>
       </div>
     );
   }
@@ -154,9 +188,11 @@ export default function Onboarding() {
 
   if (!status?.categorySet) {
     return (
+      <div className="editorial-shell">
       <div className="page" style={{ maxWidth: 640 }}>
         <h1>Welcome to Revsy</h1>
-        <div className="sub">Step 0 of 3 — tell us what you run so the dashboard uses the right words.</div>
+        <OnboardingProgress current={1} />
+        <div className="sub">Tell us what you run so the dashboard uses the right words.</div>
         <form className="card" style={{ marginTop: 20 }} onSubmit={saveProfile} data-testid="category-step">
           <h3>Are you a gym or a restaurant?</h3>
           <div className="sub">This only changes labels and default WhatsApp copy. Reviews, people, and analytics work the same either way.</div>
@@ -199,17 +235,20 @@ export default function Onboarding() {
         </form>
         {node}
       </div>
+      </div>
     );
   }
 
   return (
+    <div className="editorial-shell">
     <div className="page" style={{ maxWidth: 640 }}>
       <h1>Welcome to Revsy</h1>
+      <OnboardingProgress current={canDoWhatsapp ? 4 : 2} />
       <div className="sub">Finish these steps in order. Your dashboard stays locked until Google, approval, and WhatsApp are all done.</div>
       <div className="pill" style={{ marginTop: 10 }}>{copy.categoryLabel}</div>
 
-      <div className="card" style={{ marginTop: 20, borderLeft: googleDone ? '4px solid var(--ok)' : '4px solid var(--warn)' }}>
-        <h3>1. Connect Google Business Profile {googleDone && <span style={{ color: 'var(--ok)' }}> ✓</span>}</h3>
+      <div className="card" style={{ marginTop: 20, borderLeft: googleDone ? '4px solid var(--accent)' : '4px solid var(--line)' }}>
+        <h3>1. Connect Google Business Profile {googleDone && <span style={{ color: 'var(--accent)' }}> ✓</span>}</h3>
         <div className="sub">Revsy needs read access to your Google reviews for the last 12 months.</div>
         {googleDone ? (
           <div className="muted" style={{ marginTop: 10 }}>Connected as {status.googleAccountEmail || 'your Google account'}.</div>
@@ -232,10 +271,10 @@ export default function Onboarding() {
         )}
       </div>
 
-      <div className="card" style={{ marginTop: 16, borderLeft: waDone ? '4px solid var(--ok)' : '4px solid var(--warn)', opacity: canDoWhatsapp ? 1 : 0.6 }}>
-        <h3>2. Connect WhatsApp {waDone && <span style={{ color: 'var(--ok)' }}> ✓</span>}</h3>
+      <div className="card" style={{ marginTop: 16, borderLeft: waDone ? '4px solid var(--accent)' : '4px solid var(--line)', opacity: canDoWhatsapp ? 1 : 0.6 }}>
+        <h3>2. Connect WhatsApp {waDone && <span style={{ color: 'var(--accent)' }}> ✓</span>}</h3>
         <div className="sub">Paste your provider credentials. Revsy stores them and uses them to send review requests — we do not host WhatsApp for you.</div>
-        {!canDoWhatsapp && <div className="csv-hint" style={{ color: 'var(--warn)', marginTop: 8 }}>Connect Google and wait for approval before this step.</div>}
+        {!canDoWhatsapp && <div className="csv-hint" style={{ marginTop: 8 }}>Connect Google and wait for approval before this step.</div>}
         <form onSubmit={saveWhatsapp} style={{ marginTop: 14 }}>
           <div className="field">
             <label>Provider</label>
@@ -272,16 +311,17 @@ export default function Onboarding() {
         </form>
       </div>
 
-      <div className="card" style={{ marginTop: 16, background: bothDone ? 'var(--ok-soft)' : 'var(--bg-soft)' }}>
+      <div className="card" style={{ marginTop: 16, background: bothDone ? 'var(--accent-soft)' : 'var(--bg-soft)' }}>
         <div className="flex between">
           <div>
             <b>Ready for your dashboard?</b>
             <div className="muted" style={{ fontSize: 13 }}>Need: {googleDone && !status?.needsLocation ? '✓ Google' : '✗ Google'} · {status?.approvalStatus === 'approved' ? '✓ Approved' : '✗ Approved'} · {waDone ? '✓ WhatsApp' : '✗ WhatsApp'}</div>
           </div>
-          <button className="btn green" disabled={!bothDone} onClick={complete}>Go to dashboard</button>
+          <button className="btn" disabled={!bothDone} onClick={complete}>Go to dashboard</button>
         </div>
       </div>
       {node}
+    </div>
     </div>
   );
 }

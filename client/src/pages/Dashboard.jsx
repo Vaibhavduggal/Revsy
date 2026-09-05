@@ -104,18 +104,46 @@ function ReviewCard({ r, negative, onRead }) {
   );
 }
 
-function Panel({ title, subtitle, badge, borderColor, children, testId }) {
+function Panel({ title, subtitle, badge, borderColor, children, testId, className, titleIcon }) {
   return (
-    <div className="card" style={borderColor ? { borderTop: `3px solid ${borderColor}` } : undefined} data-testid={testId}>
+    <div className={`card ${className || ''}`.trim()} style={borderColor ? { borderTop: `3px solid ${borderColor}` } : undefined} data-testid={testId}>
       <div className="flex between">
         <div>
-          <h3 style={borderColor ? { color: borderColor } : undefined}>{title}</h3>
+          <h3 className={titleIcon ? 'ai-insights-title' : undefined} style={borderColor ? { color: borderColor } : undefined}>
+            {titleIcon}
+            {title}
+          </h3>
           {subtitle && <div className="sub">{subtitle}</div>}
         </div>
         {badge}
       </div>
       <div className="spacer" />
       {children}
+    </div>
+  );
+}
+
+function DashboardSkeleton() {
+  return (
+    <div className="page" aria-busy="true" aria-label="Loading dashboard">
+      <div className="page-head">
+        <div>
+          <div className="skeleton" style={{ width: 180, height: 28, marginBottom: 8 }} />
+          <div className="skeleton" style={{ width: 120, height: 14 }} />
+        </div>
+      </div>
+      <div className="stat-grid" style={{ marginBottom: 16 }}>
+        {[0, 1, 2, 3].map((i) => <div key={i} className="skeleton skeleton-stat" />)}
+      </div>
+      <div className="skeleton skeleton-chart" style={{ marginBottom: 16 }} />
+      <div className="row even" style={{ marginBottom: 16 }}>
+        <div className="skeleton skeleton-col" />
+        <div className="skeleton skeleton-col" />
+      </div>
+      <div className="row even">
+        <div className="skeleton skeleton-col" />
+        <div className="skeleton skeleton-col" />
+      </div>
     </div>
   );
 }
@@ -203,7 +231,7 @@ export default function Dashboard() {
     }
   };
 
-  if (loading || !data) return <div className="page"><div className="empty">Loading dashboard…</div></div>;
+  if (loading || !data) return <DashboardSkeleton />;
 
   const copy = getCopy(business?.category);
   const { stats, recent } = data;
@@ -214,6 +242,8 @@ export default function Dashboard() {
     count: w.count ?? ((w.positive || 0) + (w.negative || 0)),
   }));
   const issues = summaries?.issues || [];
+  const complaintIssues = issues.filter((i) => (i.kind || 'complaint') !== 'suggestion');
+  const suggestionIssues = issues.filter((i) => i.kind === 'suggestion');
   const unreadPos = (reviewList.positive || []).filter((r) => r.isRead === false).length;
   const unreadNeg = (reviewList.negative || []).filter((r) => r.isRead === false).length;
   const suggestions = reviewList.suggestions || [];
@@ -274,24 +304,44 @@ export default function Dashboard() {
 
       <div className="row even" style={{ marginBottom: 16, alignItems: 'start' }}>
         <Panel
+          className="ai-insights"
           title="AI insights"
-          subtitle="Recurring problems from negative Google reviews"
-          badge={<span className="badge sent sm">{issues.length} issues</span>}
-          borderColor="var(--accent)"
+          subtitle="Complaints and ideas clustered from Google and WhatsApp"
+          badge={<span className="badge sent sm">{issues.length}</span>}
+          titleIcon={<Icon.sparkle width={18} height={18} />}
         >
           {issues.length === 0 ? (
-            <div className="empty">No issues yet — they appear after negative reviews are analyzed.</div>
+            <div className="empty">Insights appear after negative reviews, private complaints, or suggestions are analyzed.</div>
           ) : (
-            <div className="flex col" style={{ gap: 8, maxHeight: 260, overflowY: 'auto' }}>
-              {issues.slice(0, 5).map((iss) => (
-                <div key={iss.id} style={{ border: '1px solid var(--line)', borderRadius: 10, padding: 10, background: iss.is_read ? '#fff' : 'var(--accent-soft)' }}>
-                  <div className="flex between">
-                    <b style={{ fontSize: 13 }}>{iss.theme} · {iss.occurrences || 1}×</b>
-                    {!iss.is_read && <button className="btn ghost sm" onClick={() => markIssueRead(iss.id)}>Read</button>}
+            <div className="flex col" style={{ gap: 4, maxHeight: 320, overflowY: 'auto' }}>
+              <div className="ai-insights-block">
+                <div className="ai-insights-kicker">Areas to improve</div>
+                {complaintIssues.length === 0 ? (
+                  <div className="empty" style={{ padding: 12 }}>No complaint themes yet.</div>
+                ) : complaintIssues.slice(0, 5).map((iss) => (
+                  <div key={iss.id} className={`ai-issue complaint ${iss.is_read ? 'read' : ''}`} style={{ marginBottom: 8 }}>
+                    <div className="flex between">
+                      <b style={{ fontSize: 13 }}>{iss.theme} · {iss.occurrences || 1}×</b>
+                      {!iss.is_read && <button className="btn ghost sm" onClick={() => markIssueRead(iss.id)}>Read</button>}
+                    </div>
+                    <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>{iss.improvement}</div>
                   </div>
-                  <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>{iss.improvement}</div>
-                </div>
-              ))}
+                ))}
+              </div>
+              <div className="ai-insights-block">
+                <div className="ai-insights-kicker">Customer suggestions</div>
+                {suggestionIssues.length === 0 ? (
+                  <div className="empty" style={{ padding: 12 }}>No suggestions yet — they appear when a happy guest offers an idea on WhatsApp.</div>
+                ) : suggestionIssues.slice(0, 5).map((iss) => (
+                  <div key={iss.id} className={`ai-issue suggestion ${iss.is_read ? 'read' : ''}`} style={{ marginBottom: 8 }}>
+                    <div className="flex between">
+                      <b style={{ fontSize: 13 }}>{iss.theme} · {iss.occurrences || 1}×</b>
+                      {!iss.is_read && <button className="btn ghost sm" onClick={() => markIssueRead(iss.id)}>Read</button>}
+                    </div>
+                    <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>{iss.improvement}</div>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </Panel>
@@ -337,7 +387,7 @@ export default function Dashboard() {
 
         <Panel
           title="Negative reviews"
-          badge={unreadNeg > 0 ? <span className="badge opened sm">{unreadNeg} unread</span> : null}
+          badge={unreadNeg > 0 ? <span className="badge warn sm">{unreadNeg} unread</span> : null}
           borderColor="var(--warn)"
         >
           {(reviewList.negative || []).length === 0 ? (
@@ -378,7 +428,7 @@ export default function Dashboard() {
         <Panel
           title={copy.complaintsTitle}
           subtitle={copy.complaintsSub}
-          badge={<span className="badge opened sm">{complaints.length}</span>}
+          badge={<span className="badge warn sm">{complaints.length}</span>}
           borderColor="var(--warn)"
           testId="complaints-section"
         >

@@ -312,7 +312,7 @@ export default function Admin() {
                       <td className="muted">{fmtDate(r.createdAt)}</td>
                       <td>
                         <div className="flex" style={{ gap: 6 }}>
-                          <button className="btn green sm" onClick={() => approve(r.id)}>Accept</button>
+                          <button className="btn sm" onClick={() => approve(r.id)}>Accept</button>
                           <button className="btn secondary sm" onClick={() => reject(r.id)}>Reject</button>
                         </div>
                       </td>

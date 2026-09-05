@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth-context.jsx';
 import { Icon, Logo } from '../components/Icons.jsx';
+import GeoAccent from '../components/marketing/GeoAccent.jsx';
 import GoogleSignIn from '../components/GoogleSignIn.jsx';
 import { useToast } from '../components/useToast.jsx';
 
@@ -47,10 +48,11 @@ export default function Login() {
   };
 
   return (
-    <div className="landing" style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', background: 'radial-gradient(900px 400px at 50% -10%, var(--accent-soft), #fff)' }}>
+    <div className="editorial-shell" style={{ display: 'grid', placeItems: 'center', padding: 24 }}>
       <div className="card" style={{ width: '100%', maxWidth: 380 }}>
         <div className="brand" style={{ justifyContent: 'center', marginBottom: 8 }}><Logo /><span>Revsy</span></div>
-        <h2 style={{ textAlign: 'center', fontSize: 22 }}>Business login</h2>
+        <p className="editorial-kicker" style={{ justifyContent: 'center', width: '100%' }}><GeoAccent /> Welcome back</p>
+        <h2 style={{ textAlign: 'center', fontSize: 28 }}>Business login</h2>
         <p className="sub" style={{ textAlign: 'center', marginBottom: 18 }}>Sign in to your review dashboard</p>
 
         <GoogleSignIn label="Continue with Google" onError={show} />

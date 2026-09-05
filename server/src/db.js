@@ -246,6 +246,7 @@ async function seedBurnGymReviews(businessId) {
       occurrences: 3,
       example_review_ids: ['rev_burn_1', 'rev_burn_4'],
       is_read: false,
+      kind: 'complaint',
     },
     {
       id: 'iss_burn_pt',
@@ -255,6 +256,7 @@ async function seedBurnGymReviews(businessId) {
       occurrences: 2,
       example_review_ids: ['rev_burn_2', 'rev_burn_5'],
       is_read: false,
+      kind: 'complaint',
     },
     {
       id: 'iss_burn_staff',
@@ -264,6 +266,17 @@ async function seedBurnGymReviews(businessId) {
       occurrences: 2,
       example_review_ids: ['rev_burn_3', 'rev_burn_6'],
       is_read: false,
+      kind: 'complaint',
+    },
+    {
+      id: 'iss_burn_hours',
+      theme: 'Later evening class on weekdays',
+      improvement: 'Pilot a 8:30pm strength class twice a week and measure attendance for a month.',
+      first_seen: new Date(now - 6 * DAY).toISOString(),
+      occurrences: 2,
+      example_review_ids: [],
+      is_read: false,
+      kind: 'suggestion',
     },
   ];
   await supabase.from('review_summaries').insert({
@@ -357,6 +370,7 @@ function mapCustomer(row) {
     createdAt: row.created_at,
     lastRequestAt: row.last_request_at,
     lastRequestStatus: row.last_request_status,
+    waDeliveryStatus: row.wa_delivery_status || null,
     waStep: row.wa_step || 'idle',
     waHistory: Array.isArray(row.wa_history) ? row.wa_history : [],
   };
@@ -535,6 +549,7 @@ function toCustomerRow(obj) {
     created_at: obj.createdAt,
     last_request_at: obj.lastRequestAt,
     last_request_status: obj.lastRequestStatus,
+    wa_delivery_status: obj.waDeliveryStatus || null,
     wa_step: obj.waStep || 'idle',
     wa_history: Array.isArray(obj.waHistory) ? obj.waHistory : [],
   };
