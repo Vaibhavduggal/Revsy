@@ -20,7 +20,7 @@ export function Sidebar() {
   return (
     <aside className="sidebar">
       <div className="sidebar-brand">
-        <Logo />
+        <Logo emoji={copy.logoEmoji} label={copy.categoryLabel} />
         <div>
           <div className="ws-name">Revsy</div>
           <div className="ws-sub">{business?.name || 'Your workspace'}</div>

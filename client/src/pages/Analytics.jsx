@@ -207,19 +207,41 @@ export default function Analytics() {
         </div>
       </div>
 
+      <div className="card" style={{ marginTop: 16 }}>
+        <h3>Positive rate over time</h3>
+        <div className="sub">Share of 👍 reactions, last 12 weeks</div>
+        <div className="spacer" />
+        <PositiveRateLine weeks={a.sentiment.weeks} />
+      </div>
+
       <div className="row two" style={{ marginTop: 16 }}>
-        <div className="card">
-          <h3>Positive rate over time</h3>
-          <div className="sub">Share of 👍 reactions, last 12 weeks</div>
+        <div className="card" data-testid="analytics-suggestions">
+          <h3>{copy.suggestionsTitle}</h3>
+          <div className="sub">{copy.suggestionsSub}</div>
           <div className="spacer" />
-          <PositiveRateLine weeks={a.sentiment.weeks} />
+          {(a.sentiment.recentSuggestions || []).length === 0 ? (
+            <div className="empty">No suggestions yet — they appear when a happy {copy.person} replies with an idea.</div>
+          ) : (
+            <div className="feedback-list">
+              {a.sentiment.recentSuggestions.map((f) => (
+                <div className="feedback-row" key={f.id}>
+                  <div className="avatar sm">{f.customerName?.[0] || '?'}</div>
+                  <div className="flex col" style={{ gap: 2 }}>
+                    <div><b>{f.customerName}</b> <span className="muted" style={{ fontSize: 12 }}>· {f.phone}</span></div>
+                    <div className="muted" style={{ fontSize: 13 }}>{f.complaint}</div>
+                  </div>
+                  <span className="muted" style={{ fontSize: 11, marginLeft: 'auto' }}>{new Date(f.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
-        <div className="card">
+        <div className="card" data-testid="analytics-complaints">
           <h3>{copy.complaintsTitle}</h3>
           <div className="sub">{copy.complaintsSub}</div>
           <div className="spacer" />
-          {a.sentiment.recentFeedback.length === 0 ? (
-            <div className="empty">No negative feedback yet. 🎉</div>
+          {(a.sentiment.recentFeedback || []).length === 0 ? (
+            <div className="empty">No private complaints yet.</div>
           ) : (
             <div className="feedback-list">
               {a.sentiment.recentFeedback.map((f) => (

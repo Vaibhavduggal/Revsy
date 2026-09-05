@@ -67,7 +67,7 @@ function CustomizeModal({ customer, business, onClose, onSaved, copy: copyProp }
         <span className="csv-hint">Variables: {TEMPLATE_VARS}</span>
       </div>
       <div className="flex" style={{ gap: 16, alignItems: 'flex-start', marginTop: 8 }}>
-        <PhoneMockup name={customer.name} message={preview} businessName={business.name} />
+        <PhoneMockup name={customer.name} message={preview} businessName={business.name} category={business.category} />
       </div>
       <div className="modal-actions">
         <button type="button" className="btn secondary" onClick={onClose}>Cancel</button>
@@ -252,7 +252,7 @@ export default function Customers() {
     if (rows.length === 0) { show('No valid rows found (need name, phone).'); return; }
     try {
       const r = await api.importCustomers(rows);
-      show(`Imported ${r.added} customers${r.skipped ? `, skipped ${r.skipped}` : ''}`);
+      show(`Imported ${r.added} ${copy.personPlural}${r.skipped ? `, skipped ${r.skipped}` : ''}`);
       setCsvText(''); setImportOpen(false); load();
     } catch (e) { show(e.message); }
   };
@@ -262,7 +262,7 @@ export default function Customers() {
     const blob = new Blob([sample], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url; a.download = 'customers-sample.csv'; a.click();
+    a.href = url; a.download = `${copy.personPlural}-sample.csv`; a.click();
     URL.revokeObjectURL(url);
   };
 

@@ -159,13 +159,14 @@ export default function Onboarding() {
         <div className="sub">Step 0 of 3 — tell us what you run so the dashboard uses the right words.</div>
         <form className="card" style={{ marginTop: 20 }} onSubmit={saveProfile} data-testid="category-step">
           <h3>Are you a gym or a restaurant?</h3>
-          <div className="sub">This only changes labels and default WhatsApp copy. Reviews, members, and analytics work the same either way.</div>
+          <div className="sub">This only changes labels and default WhatsApp copy. Reviews, people, and analytics work the same either way.</div>
           <div className="spacer" />
           <div className="flex" style={{ gap: 12, flexWrap: 'wrap' }}>
             <button
               type="button"
               className={`btn ${category === 'gym' ? '' : 'secondary'}`}
               onClick={() => setCategory('gym')}
+              data-testid="category-gym"
               style={{ flex: 1, minWidth: 140, height: 88 }}
             >
               <div style={{ fontSize: 28 }}>🏋️</div>
@@ -175,6 +176,7 @@ export default function Onboarding() {
               type="button"
               className={`btn ${category === 'restaurant' ? '' : 'secondary'}`}
               onClick={() => setCategory('restaurant')}
+              data-testid="category-restaurant"
               style={{ flex: 1, minWidth: 140, height: 88 }}
             >
               <div style={{ fontSize: 28 }}>🍽️</div>
@@ -187,11 +189,11 @@ export default function Onboarding() {
           </div>
           <div className="field">
             <label>Address</label>
-            <input className="input" value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Street, city, PIN" />
+            <input className="input" data-testid="onboarding-address" value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Street, city, PIN" />
           </div>
           <div className="field">
             <label>Phone</label>
-            <input className="input" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+91 …" />
+            <input className="input" data-testid="onboarding-phone" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+91 …" />
           </div>
           <button type="submit" className="btn" disabled={savingProfile}>{savingProfile ? 'Saving…' : 'Continue'}</button>
         </form>

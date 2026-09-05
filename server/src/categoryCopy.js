@@ -29,6 +29,7 @@ export const CATEGORY_COPY = {
     locationPick: 'Pick the location Revsy should track.',
     approvalWait: 'The Revsy platform owner still needs to approve your business before WhatsApp setup unlocks.',
     aiPromptKind: 'restaurant',
+    logoEmoji: '🍽️',
   },
   gym: {
     category: 'gym',
@@ -58,6 +59,7 @@ export const CATEGORY_COPY = {
     locationPick: 'Pick the gym location Revsy should track.',
     approvalWait: 'The Revsy platform owner still needs to approve your gym before WhatsApp setup unlocks.',
     aiPromptKind: 'gym',
+    logoEmoji: '🏋️',
   },
 };
 

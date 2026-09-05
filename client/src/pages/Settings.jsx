@@ -162,6 +162,7 @@ export default function Settings() {
             name="Rahul Sharma"
             message={preview || `Hi [${copy.person} name], thanks for ${copy.visitGerund} [business name] today! …`}
             businessName={form.businessName}
+            category={business?.category}
           />
           <div className="csv-hint" style={{ marginTop: 12, textAlign: 'center' }}>
             Effective send delay: {form.demoMode ? '10 seconds' : Number(form.delaySeconds) === 0 ? 'immediate' : `${Math.round(Number(form.delaySeconds) / 60)} min (${form.delaySeconds}s)`}

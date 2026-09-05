@@ -10,7 +10,7 @@ function fmtTime(date) {
 // `interactive` shows tappable quick-reply buttons (for demo mode).
 export function WhatsAppConversation({ conversation, businessName = 'Your Business', interactive, onReaction, category }) {
   const copy = getCopy(category);
-  const avatar = copy.category === 'gym' ? '🏋️' : '🍽️';
+  const avatar = copy.logoEmoji;
   return (
     <div className="wa-screen">
       <div className="wa-bar">
