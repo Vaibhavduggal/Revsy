@@ -55,7 +55,7 @@ export default function Login() {
         <h2 style={{ textAlign: 'center', fontSize: 28 }}>Business login</h2>
         <p className="sub" style={{ textAlign: 'center', marginBottom: 18 }}>Sign in to your review dashboard</p>
 
-        <GoogleSignIn label="Continue with Google" onError={show} />
+        <GoogleSignIn intent="login" label="Continue with Google" onError={show} />
 
         <div className="flex" style={{ alignItems: 'center', gap: 10, margin: '16px 0' }}>
           <div style={{ flex: 1, height: 1, background: 'var(--line)' }} />

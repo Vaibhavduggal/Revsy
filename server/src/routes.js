@@ -7,7 +7,7 @@ import { classifyOneReview, weeklyUpdateBusiness, getCurrentSummaryRow, issuesFr
 import { listGoogleLocations, saveSelectedLocation, autoSelectLocationIfSingle, syncGoogleReviewsForBusiness } from './google.js';
 import { buildSupabaseGoogleAuthUrl, getPublicSupabaseConfig, signOAuthState, verifyOAuthState, verifySupabaseAccessToken } from './supabase-auth.js';
 import { getCopy, defaultTemplateFor, defaultMessageTemplates, messagePresetsFor, normalizeCategory, renderBusinessTemplate, resolveMessageTemplates } from './categoryCopy.js';
-import { resolveFrontendUrl, resolveGoogleRedirectUri } from './oauth-urls.js';
+import { resolveFrontendUrl, resolveGoogleRedirectUri, buildGoogleAuthUrl, googleClientId, googleClientSecret } from './oauth-urls.js';
 import { extractInboundMessages, extractDeliveryStatuses } from './sentimentFlow.js';
 import { handleCustomerInbound, handleInboundText, applyDeliveryStatus } from './inbound.js';
 
@@ -262,16 +262,157 @@ router.post('/webhooks/inbound', async (req, res) => {
 router.get('/auth/supabase/google', (req, res) => {
   try {
     const businessName = req.query.businessName ? String(req.query.businessName).trim() : '';
-    const frontendBase = String(process.env.FRONTEND_URL || '').replace(/\/$/, '')
-      || (req.headers.origin ? String(req.headers.origin).replace(/\/$/, '') : '');
-    if (!frontendBase) return res.status(500).json({ error: 'FRONTEND_URL is not configured' });
-    const oauthState = signOAuthState({ businessName, ts: Date.now() });
-    const redirectTo = `${frontendBase}/auth/callback?state=${encodeURIComponent(oauthState)}`;
-    const url = buildSupabaseGoogleAuthUrl({ redirectTo, state: oauthState });
-    res.redirect(url);
+    const params = new URLSearchParams({ intent: 'signup' });
+    if (businessName) params.set('businessName', businessName);
+    res.redirect(307, `/api/auth/google/start?${params.toString()}`);
   } catch (e) {
-    res.status(500).json({ error: e.message || 'Supabase Google login is not configured' });
+    res.status(500).json({ error: e.message || 'Google login is not configured' });
   }
+});
+
+async function findOrCreateBusinessForGoogle({ email, businessName, mode }) {
+  const db = getDb();
+  const em = String(email || '').trim().toLowerCase();
+  if (!em) return { error: 'Google account did not return an email address' };
+
+  const { data: existingBiz } = await db.from('businesses').select('*').eq('owner_email', em).maybeSingle();
+  if (existingBiz) {
+    if (mode === 'login' || mode === 'signup') return { businessId: existingBiz.id, isNew: false };
+  }
+  if (mode === 'login') return { error: 'No Revsy account found for this Google email. Create an account first.' };
+
+  const name = (businessName && String(businessName).trim())
+    || em.split('@')[0];
+  const { data: invite } = await db.from('invited_emails').select('*').eq('email', em).eq('used', false).maybeSingle();
+  const preApproved = !!invite;
+  if (invite) await db.from('invited_emails').update({ used: true }).eq('id', invite.id);
+
+  const businessId = newId('biz');
+  const oauthTemplates = defaultMessageTemplates('restaurant');
+  await db.from('businesses').insert({
+    id: businessId,
+    name,
+    owner_email: em,
+    password: hashPassword(crypto.randomBytes(32).toString('hex')),
+    is_demo: false,
+    google_review_link: '',
+    feedback_link: '',
+    address: '',
+    phone: '',
+    description: '',
+    message_template: oauthTemplates.gate,
+    message_templates: oauthTemplates,
+    delay_seconds: 1800,
+    demo_mode: false,
+    subscription_status: 'trial',
+    created_at: new Date().toISOString(),
+    reviews_received: 0,
+    place_id: '',
+    whatsapp_bsp: '',
+    whatsapp_api_key: '',
+    whatsapp_phone_number_id: '',
+    whatsapp_status: 'not_connected',
+    google_access_token: null,
+    google_refresh_token: null,
+    google_token_expires_at: null,
+    google_connected: false,
+    google_account_email: null,
+    onboarding_completed: false,
+    approval_status: 'pending_approval',
+    pre_approved: preApproved,
+    approved_at: null,
+    rejected_at: null,
+    category: 'restaurant',
+    category_set: false,
+  });
+  return { businessId, isNew: true };
+}
+
+async function exchangeGoogleAuthCode(req, code) {
+  const clientId = googleClientId();
+  const clientSecret = googleClientSecret();
+  const redirectUri = resolveGoogleRedirectUri(req);
+  if (!clientId || !clientSecret || !redirectUri) throw new Error('Google OAuth not configured');
+  const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      code: String(code),
+      client_id: clientId,
+      client_secret: clientSecret,
+      redirect_uri: redirectUri,
+      grant_type: 'authorization_code',
+    }),
+  });
+  const tokenData = await tokenRes.json();
+  if (!tokenRes.ok) throw new Error('Token exchange failed: ' + JSON.stringify(tokenData));
+  return tokenData;
+}
+
+async function applyGoogleBusinessTokens(businessId, tokenData) {
+  const db = getDb();
+  const accessToken = tokenData.access_token;
+  const refreshToken = tokenData.refresh_token;
+  const expiresAt = new Date(Date.now() + (tokenData.expires_in || 3600) * 1000).toISOString();
+
+  let accountEmail = null;
+  try {
+    const infoRes = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    const info = await infoRes.json();
+    accountEmail = info.email || null;
+  } catch {}
+
+  const existingBiz = await getBusiness(businessId);
+  const updates = {
+    google_access_token: accessToken,
+    google_refresh_token: refreshToken || existingBiz?.googleRefreshToken || null,
+    google_token_expires_at: expiresAt,
+    google_connected: true,
+    google_account_email: accountEmail,
+  };
+  if (existingBiz?.preApproved) {
+    updates.approval_status = 'approved';
+    updates.approved_at = new Date().toISOString();
+    updates.rejected_at = null;
+  }
+  await db.from('businesses').update(updates).eq('id', businessId);
+
+  try {
+    const fresh = await getBusiness(businessId);
+    if (fresh) {
+      await autoSelectLocationIfSingle(fresh);
+      const bizForSync = await getBusiness(businessId);
+      if (bizForSync?.googleLocationName) {
+        await syncGoogleReviewsForBusiness(bizForSync, { classifyNegative: classifyOneReview });
+      }
+    }
+  } catch (e) {
+    console.error('post-oauth location/sync failed:', e.message);
+  }
+
+  return accountEmail;
+}
+
+async function createSessionForBusiness(businessId) {
+  const db = getDb();
+  const token = newToken();
+  await db.from('sessions').insert({ token, business_id: businessId, created_at: new Date().toISOString() });
+  return token;
+}
+
+router.get('/auth/google/start', (req, res) => {
+  const intent = String(req.query.intent || 'signup').toLowerCase() === 'login' ? 'login' : 'signup';
+  const businessName = req.query.businessName ? String(req.query.businessName).trim() : '';
+  const clientId = googleClientId();
+  const redirectUri = resolveGoogleRedirectUri(req);
+  if (!clientId || !redirectUri) {
+    return res.status(500).json({ error: 'Google OAuth not configured. Set GOOGLE_CLIENT_ID and GOOGLE_REDIRECT_URI env vars.' });
+  }
+  const oauthState = signOAuthState({ mode: intent, businessName, ts: Date.now() });
+  const url = buildGoogleAuthUrl({ clientId, redirectUri, state: oauthState, prompt: 'consent' });
+  res.redirect(url);
 });
 
 router.post('/auth/supabase', async (req, res) => {
@@ -1035,93 +1176,67 @@ router.get('/auth/google', async (req, res) => {
   }
   if (!businessId && req.business) businessId = req.business.id;
   if (!businessId) return res.status(401).json({ error: 'Unauthorized — login first' });
-  const clientId = process.env.GOOGLE_CLIENT_ID;
+  const clientId = googleClientId();
   const redirectUri = resolveGoogleRedirectUri(req);
   if (!clientId || !redirectUri) {
     return res.status(500).json({ error: 'Google OAuth not configured. Set GOOGLE_CLIENT_ID and GOOGLE_REDIRECT_URI env vars.' });
   }
-  const state = businessId;
-  const scope = encodeURIComponent('https://www.googleapis.com/auth/business.manage https://www.googleapis.com/auth/userinfo.email');
-  const url = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=${scope}&access_type=offline&prompt=consent&state=${encodeURIComponent(state)}`;
+  const url = buildGoogleAuthUrl({ clientId, redirectUri, state: String(businessId), prompt: 'consent' });
   res.redirect(url);
 });
 
 router.get('/auth/google/callback', async (req, res) => {
   const { code, state } = req.query;
   if (!code || !state) return res.status(400).send('Missing code or state');
-  const clientId = process.env.GOOGLE_CLIENT_ID;
-  const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
-  const redirectUri = resolveGoogleRedirectUri(req);
-  if (!clientId || !clientSecret || !redirectUri) return res.status(500).send('Google OAuth not configured');
+  const frontendBase = resolveFrontendUrl(req);
   try {
-    const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        code: String(code),
-        client_id: clientId,
-        client_secret: clientSecret,
-        redirect_uri: redirectUri,
-        grant_type: 'authorization_code',
-      }),
-    });
-    const tokenData = await tokenRes.json();
-    if (!tokenRes.ok) return res.status(400).send('Token exchange failed: ' + JSON.stringify(tokenData));
-    const accessToken = tokenData.access_token;
-    const refreshToken = tokenData.refresh_token;
-    const expiresAt = new Date(Date.now() + (tokenData.expires_in || 3600) * 1000).toISOString();
+    const tokenData = await exchangeGoogleAuthCode(req, code);
+    const stateData = verifyOAuthState(state);
 
-    let accountEmail = null;
-    try {
-      const infoRes = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', { headers: { Authorization: `Bearer ${accessToken}` } });
-      const info = await infoRes.json();
-      accountEmail = info.email || null;
-    } catch {}
+    if (stateData?.mode === 'signup' || stateData?.mode === 'login') {
+      let accountEmail = null;
+      try {
+        const infoRes = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+          headers: { Authorization: `Bearer ${tokenData.access_token}` },
+        });
+        const info = await infoRes.json();
+        accountEmail = info.email || null;
+      } catch {}
 
-    const db = getDb();
-    const businessId = String(state);
-    const existingBiz = await getBusiness(businessId);
-    const updates = {
-      google_access_token: accessToken,
-      google_refresh_token: refreshToken || null,
-      google_token_expires_at: expiresAt,
-      google_connected: true,
-      google_account_email: accountEmail,
-    };
-    // Handle pre-approved: auto-approve after Google connect
-    if (existingBiz && existingBiz.preApproved) {
-      updates.approval_status = 'approved';
-      updates.approved_at = new Date().toISOString();
-      updates.rejected_at = null;
-    } else if (existingBiz && existingBiz.approvalStatus === 'pending_approval') {
-      // keep pending for manual approval, don't auto-approve
+      const result = await findOrCreateBusinessForGoogle({
+        email: accountEmail,
+        businessName: stateData.businessName,
+        mode: stateData.mode,
+      });
+      if (result.error) {
+        return res.redirect(`${frontendBase}/auth/callback?error=${encodeURIComponent(result.error)}`);
+      }
+
+      await applyGoogleBusinessTokens(result.businessId, tokenData);
+      const sessionToken = await createSessionForBusiness(result.businessId);
+      const biz = await getBusiness(result.businessId);
+      const dest = biz?.onboardingCompleted ? '/dashboard' : '/onboarding';
+      return res.redirect(`${frontendBase}/auth/callback?token=${encodeURIComponent(sessionToken)}&google=success&next=${encodeURIComponent(dest)}`);
     }
-    await db.from('businesses').update(updates).eq('id', businessId);
+
+    const clientId = googleClientId();
+    const redirectUri = resolveGoogleRedirectUri(req);
+    if (!clientId || !redirectUri) return res.status(500).send('Google OAuth not configured');
+
+    const businessId = String(state);
+    await applyGoogleBusinessTokens(businessId, tokenData);
 
     const biz = await getBusiness(businessId);
     const isApproved = biz && biz.approvalStatus === 'approved';
     if (biz && biz.whatsapp.status === 'connected' && isApproved) {
+      const db = getDb();
       await db.from('businesses').update({ onboarding_completed: true }).eq('id', businessId);
     }
 
-    try {
-      const fresh = await getBusiness(businessId);
-      if (fresh) {
-        await autoSelectLocationIfSingle(fresh);
-        const bizForSync = await getBusiness(businessId);
-        if (bizForSync?.googleLocationName) {
-          await syncGoogleReviewsForBusiness(bizForSync, { classifyNegative: classifyOneReview });
-        }
-      }
-    } catch (e) {
-      console.error('post-oauth location/sync failed:', e.message);
-    }
-
-    const frontendBase = resolveFrontendUrl(req);
     const redirectTo = `${String(frontendBase).replace(/\/$/, '')}/onboarding?google=success`;
     res.redirect(redirectTo || '/onboarding?google=success');
   } catch (e) {
-    res.status(500).send('OAuth callback failed: ' + e.message);
+    res.redirect(`${frontendBase}/auth/callback?error=${encodeURIComponent(e.message || 'OAuth callback failed')}`);
   }
 });
 

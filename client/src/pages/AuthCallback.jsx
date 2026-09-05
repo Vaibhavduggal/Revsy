@@ -19,9 +19,23 @@ export default function AuthCallback() {
       try {
         const hash = parseHashTokens();
         const query = new URLSearchParams(window.location.search);
-        if (hash.error || query.get('error')) {
+
+        if (query.get('error')) {
+          throw new Error(query.get('error') || 'Google sign-in was cancelled');
+        }
+        if (hash.error || query.get('error_description')) {
           throw new Error(hash.error_description || query.get('error_description') || 'Google sign-in was cancelled');
         }
+
+        const directToken = query.get('token');
+        if (directToken) {
+          setToken(directToken);
+          sessionStorage.removeItem('revsy_google_business_name');
+          const next = query.get('next') || '/onboarding';
+          window.location.href = next;
+          return;
+        }
+
         const accessToken = hash.access_token;
         const oauthState = query.get('state');
         const businessName = sessionStorage.getItem('revsy_google_business_name') || query.get('businessName') || '';
@@ -55,12 +69,12 @@ export default function AuthCallback() {
   }, [navigate]);
 
   return (
-    <div className="landing" style={{ minHeight: '100vh', display: 'grid', placeItems: 'center' }}>
+    <div className="editorial-shell" style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', padding: 24 }}>
       <div className="card" style={{ maxWidth: 420, textAlign: 'center' }}>
         <div className="brand" style={{ justifyContent: 'center', marginBottom: 12 }}><Logo /><span>Revsy</span></div>
         <h2 style={{ fontSize: 22 }}>{error ? 'Sign-in failed' : 'Finishing Google sign-in…'}</h2>
         <p className="sub" style={{ marginTop: 8 }}>
-          {error || 'Connecting your account and requesting Google review permissions next.'}
+          {error || 'Connecting your Google account and Google Business Profile access.'}
         </p>
         {error ? (
           <button className="btn" style={{ marginTop: 16 }} onClick={() => navigate('/login')}>Back to login</button>

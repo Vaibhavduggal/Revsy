@@ -11,18 +11,23 @@ function GoogleIcon() {
   );
 }
 
-export default function GoogleSignIn({ businessName, label = 'Continue with Google', onError }) {
+export default function GoogleSignIn({
+  businessName,
+  intent = 'signup',
+  label = 'Continue with Google',
+  onError,
+}) {
   const [busy, setBusy] = useState(false);
 
-  const start = async () => {
+  const start = () => {
     setBusy(true);
     try {
       if (businessName?.trim()) {
         sessionStorage.setItem('revsy_google_business_name', businessName.trim());
       }
-      const params = new URLSearchParams();
+      const params = new URLSearchParams({ intent });
       if (businessName?.trim()) params.set('businessName', businessName.trim());
-      window.location.href = `/api/auth/supabase/google${params.toString() ? `?${params}` : ''}`;
+      window.location.href = `/api/auth/google/start?${params.toString()}`;
     } catch (err) {
       onError?.(err.message || 'Could not start Google login');
       setBusy(false);
