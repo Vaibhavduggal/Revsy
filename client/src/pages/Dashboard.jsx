@@ -310,10 +310,7 @@ export default function Dashboard() {
           badge={<span className="badge sent sm">{issues.length}</span>}
           titleIcon={<Icon.sparkle width={18} height={18} />}
         >
-          {issues.length === 0 ? (
-            <div className="empty">Insights appear after negative reviews, private complaints, or suggestions are analyzed.</div>
-          ) : (
-            <div className="flex col" style={{ gap: 4, maxHeight: 320, overflowY: 'auto' }}>
+          <div className="flex col" style={{ gap: 4, maxHeight: 320, overflowY: 'auto' }}>
               <div className="ai-insights-block">
                 <div className="ai-insights-kicker">Areas to improve</div>
                 {complaintIssues.length === 0 ? (
@@ -343,7 +340,6 @@ export default function Dashboard() {
                 ))}
               </div>
             </div>
-          )}
         </Panel>
 
         <Panel title="Recent review requests" subtitle="Latest WhatsApp review asks">
