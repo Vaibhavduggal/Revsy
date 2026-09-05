@@ -5,8 +5,7 @@ import { useAuth } from '../auth-context.jsx';
 import { Icon } from '../components/Icons.jsx';
 import { useToast } from '../components/useToast.jsx';
 import { getCopy } from '../utils/categoryCopy.js';
-import Hero02 from '../components/ui/hero-02.jsx';
-import { Button } from '../components/ui/button-shadcn';
+import ReviewTrendChart from '../components/dashboard/ReviewTrendChart.jsx';
 
 function StatusBadge({ status }) {
   const map = { Sent: 'sent', Opened: 'opened', Reviewed: 'reviewed', Scheduled: 'scheduled' };
@@ -161,8 +160,9 @@ export default function Dashboard() {
     try {
       await api.markReviewRead(id);
       setReviewList((rl) => ({
-        positive: rl.positive.map((r) => (r.id === id ? { ...r, isRead: true } : r)),
-        negative: rl.negative.map((r) => (r.id === id ? { ...r, isRead: true } : r)),
+        ...rl,
+        positive: (rl.positive || []).map((r) => (r.id === id ? { ...r, isRead: true } : r)),
+        negative: (rl.negative || []).map((r) => (r.id === id ? { ...r, isRead: true } : r)),
       }));
     } catch (e) { show(e.message); }
   };
@@ -207,67 +207,72 @@ export default function Dashboard() {
 
   const copy = getCopy(business?.category);
   const { stats, recent } = data;
-  const chartWeeks = analytics?.weeks || [];
+  const chartWeeks = (analytics?.weeks || []).map((w) => ({
+    ...w,
+    positive: w.positive ?? 0,
+    negative: w.negative ?? 0,
+    count: w.count ?? ((w.positive || 0) + (w.negative || 0)),
+  }));
   const issues = summaries?.issues || [];
-  const unreadPos = reviewList.positive.filter((r) => r.isRead === false).length;
-  const unreadNeg = reviewList.negative.filter((r) => r.isRead === false).length;
+  const unreadPos = (reviewList.positive || []).filter((r) => r.isRead === false).length;
+  const unreadNeg = (reviewList.negative || []).filter((r) => r.isRead === false).length;
   const suggestions = reviewList.suggestions || [];
   const complaints = reviewList.complaints || [];
 
   return (
-    <div className="page dashboard-page">
-      <Hero02
-        variant="compact"
-        animation="subtle"
-        title="Every review metric that matters,"
-        titleLine2="in one clear view."
-        description={`${business?.name} · ${copy.dashboardSub}. Track requests, reactions, and recurring issues without spreadsheets.`}
-        washImage="https://images.unsplash.com/photo-1551288049-bebda4e38f71?auto=format&fit=crop&w=1600&q=80"
-        primaryCTA={{
-          ctaEnabled: true,
-          text: copy.addPerson,
-          onClick: () => setQuickAddOpen(true),
-          variant: 'default',
-          size: 'default',
-        }}
-        secondaryCTA={{
-          ctaEnabled: true,
-          text: syncing ? 'Syncing…' : 'Sync Google',
-          onClick: syncGoogle,
-          variant: 'outline',
-          size: 'default',
-        }}
-        actions={(
-          <>
-            <Button variant="ghost" size="sm" asChild>
-              <Link to="/customers">{copy.personPluralTitle}</Link>
-            </Button>
-            <Button variant="ghost" size="sm" asChild>
-              <Link to="/analytics">Full analytics</Link>
-            </Button>
-          </>
-        )}
-        dashboardProps={{
-          stats,
-          weeks: chartWeeks,
-          unreadReviews: unreadPos + unreadNeg,
-          onRefresh: load,
-          businessName: business?.name,
-        }}
-      />
+    <div className="page">
+      <div className="page-head">
+        <div>
+          <h1>Dashboard</h1>
+          <div className="sub">{business?.name}</div>
+        </div>
+        <div className="flex" style={{ gap: 8, flexWrap: 'wrap' }}>
+          <button className="btn" onClick={() => setQuickAddOpen((v) => !v)}>
+            <Icon.plus width={16} height={16} /> {copy.addPerson}
+          </button>
+          <Link className="btn secondary sm" to="/customers">{copy.personPluralTitle}</Link>
+          <Link className="btn secondary sm" to="/reviews">All reviews</Link>
+          <Link className="btn secondary sm" to="/analytics">Analytics</Link>
+          <button className="btn ghost sm" onClick={syncGoogle} disabled={syncing}>
+            <Icon.star width={13} height={13} /> {syncing ? 'Syncing…' : 'Sync Google'}
+          </button>
+        </div>
+      </div>
 
       {quickAddOpen && (
-        <div className="card" style={{ marginTop: 16 }}>
-          <QuickAdd
-            copy={copy}
-            initialOpen
-            onClose={() => setQuickAddOpen(false)}
-            onAdded={load}
-          />
+        <div className="card" style={{ marginBottom: 16 }}>
+          <QuickAdd copy={copy} initialOpen onClose={() => setQuickAddOpen(false)} onAdded={load} />
         </div>
       )}
 
-      <div className="row even" style={{ marginTop: 16, alignItems: 'start' }}>
+      <div className="stat-grid" style={{ marginBottom: 16 }}>
+        <div className="stat accent">
+          <div className="icon"><Icon.send width={20} height={20} /></div>
+          <div className="label">Requests sent</div>
+          <div className="value">{stats.totalSent}</div>
+        </div>
+        <div className="stat">
+          <div className="icon"><Icon.star width={20} height={20} /></div>
+          <div className="label">Reviews received</div>
+          <div className="value">{stats.totalReceived}</div>
+        </div>
+        <div className="stat">
+          <div className="icon"><Icon.rocket width={20} height={20} /></div>
+          <div className="label">Conversion</div>
+          <div className="value">{stats.conversionRate}%</div>
+        </div>
+        <div className="stat">
+          <div className="icon"><Icon.users width={20} height={20} /></div>
+          <div className="label">Unread reviews</div>
+          <div className="value">{unreadPos + unreadNeg}</div>
+        </div>
+      </div>
+
+      <div style={{ marginBottom: 16 }}>
+        <ReviewTrendChart weeks={chartWeeks} onRefresh={load} />
+      </div>
+
+      <div className="row even" style={{ marginBottom: 16, alignItems: 'start' }}>
         <Panel
           title="AI insights"
           subtitle="Recurring problems from negative Google reviews"
@@ -291,10 +296,7 @@ export default function Dashboard() {
           )}
         </Panel>
 
-        <Panel
-          title="Recent review requests"
-          subtitle="Latest WhatsApp review asks"
-        >
+        <Panel title="Recent review requests" subtitle="Latest WhatsApp review asks">
           {recent.length === 0 ? (
             <div className="empty">No requests yet — add a {copy.person} to get started.</div>
           ) : (
@@ -316,13 +318,13 @@ export default function Dashboard() {
         </Panel>
       </div>
 
-      <div className="row even" style={{ marginTop: 16 }}>
+      <div className="row even" style={{ marginBottom: 16 }}>
         <Panel
           title="Positive reviews"
           badge={unreadPos > 0 ? <span className="badge reviewed sm">{unreadPos} unread</span> : null}
           borderColor="var(--ok)"
         >
-          {reviewList.positive.length === 0 ? (
+          {(reviewList.positive || []).length === 0 ? (
             <div className="empty">No positive reviews yet.</div>
           ) : (
             <div className="flex col" style={{ gap: 10, maxHeight: 320, overflowY: 'auto' }}>
@@ -338,7 +340,7 @@ export default function Dashboard() {
           badge={unreadNeg > 0 ? <span className="badge opened sm">{unreadNeg} unread</span> : null}
           borderColor="var(--warn)"
         >
-          {reviewList.negative.length === 0 ? (
+          {(reviewList.negative || []).length === 0 ? (
             <div className="empty">No negative feedback yet.</div>
           ) : (
             <div className="flex col" style={{ gap: 10, maxHeight: 320, overflowY: 'auto' }}>
@@ -350,7 +352,7 @@ export default function Dashboard() {
         </Panel>
       </div>
 
-      <div className="row even" style={{ marginTop: 16 }}>
+      <div className="row even" style={{ marginBottom: 16 }}>
         <Panel
           title={copy.suggestionsTitle}
           subtitle={copy.suggestionsSub}

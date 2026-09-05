@@ -93,6 +93,28 @@
 .mkt-motif { color: var(--m-motif); opacity: 0.85; }
 .mkt-motif-sm { opacity: 0.55; }
 
+.rupee-coin {
+  perspective: 600px;
+  display: grid;
+  place-items: center;
+}
+.rupee-coin-spin {
+  transform-style: preserve-3d;
+  animation: rupee-spin 6.5s linear infinite, rupee-float 3.2s ease-in-out infinite;
+  filter: drop-shadow(0 12px 18px rgba(26, 61, 52, 0.18));
+}
+@keyframes rupee-spin {
+  from { transform: rotateY(0deg); }
+  to { transform: rotateY(360deg); }
+}
+@keyframes rupee-float {
+  0%, 100% { translate: 0 0; }
+  50% { translate: 0 -10px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .rupee-coin-spin { animation: none; }
+}
+
 /* Nav */
 .mkt-nav {
   display: flex;
@@ -529,7 +551,8 @@
   .mkt-lead { margin-left: auto; margin-right: auto; }
   .mkt-hero-actions { justify-content: center; }
   .mkt-hero-motif { order: -1; min-height: 120px; }
-  .mkt-hero-motif .mkt-motif { width: 100px; height: 100px; }
+  .mkt-hero-motif .mkt-motif,
+  .mkt-hero-motif .rupee-coin { width: 100px; height: 100px; }
 
   .mkt-feature-grid,
   .mkt-industry-grid,

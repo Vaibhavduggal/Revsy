@@ -1,6 +1,7 @@
 import { useNavigate } from 'react-router-dom';
 import { Logo } from '../components/Icons.jsx';
 import ReviewMotif from '../components/marketing/ReviewMotif.jsx';
+import RupeeCoin from '../components/marketing/RupeeCoin.jsx';
 import '../styles-marketing.css';
 
 const FEATURES = [
@@ -90,7 +91,7 @@ export default function Landing() {
             </div>
           </div>
           <div className="mkt-hero-motif" aria-hidden="true">
-            <ReviewMotif size={160} className="mkt-motif" />
+            <RupeeCoin size={180} />
           </div>
         </div>
       </section>
@@ -163,6 +164,9 @@ export default function Landing() {
             <p className="mkt-eyebrow">For business owners</p>
             <h2>Set up in minutes — no technical knowledge needed</h2>
             <p>Connect your accounts once. Revsy handles the rest.</p>
+            <div style={{ marginTop: 20 }}>
+              <RupeeCoin size={72} />
+            </div>
           </div>
           <ol className="mkt-steps">
             <li><span>1</span><div><strong>Sign up</strong><p>Create your business account in under a minute.</p></div></li>

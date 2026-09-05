@@ -99,7 +99,6 @@ export default function ReviewTrendChart({ weeks, onRefresh, compact = false }) 
   const totalNegative = chartData.reduce((sum, row) => sum + row.negative, 0);
   const maxValue = Math.max(1, ...chartData.map((row) => Math.max(row.positive, row.negative, row.total)));
   const chartHeight = compact ? 260 : 350;
-  const hasAnyData = totalPositive + totalNegative > 0;
 
   return (
     <Card className={compact ? 'w-full border-0 bg-transparent shadow-none' : 'w-full border-border shadow-xs'}>
@@ -155,14 +154,6 @@ export default function ReviewTrendChart({ weeks, onRefresh, compact = false }) 
       </CardHeader>
 
       <CardContent className={compact ? 'px-0 pb-0 pt-0' : 'px-2.5 pb-6 pt-0'}>
-        {!hasAnyData ? (
-          <div
-            className="flex items-center justify-center rounded-lg border border-dashed border-border bg-muted/30 text-sm text-muted-foreground"
-            style={{ height: chartHeight }}
-          >
-            No review reactions yet — chart fills in after your first WhatsApp replies.
-          </div>
-        ) : (
           <ChartContainer
             config={chartConfig}
             className="w-full [&_.recharts-curve.recharts-tooltip-cursor]:stroke-initial"
@@ -243,7 +234,6 @@ export default function ReviewTrendChart({ weeks, onRefresh, compact = false }) 
               />
             </ComposedChart>
           </ChartContainer>
-        )}
       </CardContent>
     </Card>
   );
