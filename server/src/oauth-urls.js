@@ -13,11 +13,14 @@ function isLocalUrl(value) {
   return /localhost|127\.0\.0\.1/i.test(String(value || ''));
 }
 
-export const GOOGLE_OAUTH_SCOPES = [
+/** Sign-in only — no sensitive scopes, works for OAuth "Testing" mode test users. */
+export const GOOGLE_SIGNIN_SCOPES = ['openid', 'email', 'profile'].join(' ');
+
+/** Google Business Profile — restricted scope; requires test user or app verification. */
+export const GOOGLE_BUSINESS_SCOPES = [
   'openid',
   'email',
   'profile',
-  'https://www.googleapis.com/auth/userinfo.email',
   'https://www.googleapis.com/auth/business.manage',
 ].join(' ');
 
@@ -29,18 +32,28 @@ export function googleClientSecret() {
   return String(process.env.GOOGLE_CLIENT_SECRET || '').trim();
 }
 
-export function buildGoogleAuthUrl({ clientId, redirectUri, state, prompt = 'consent' }) {
+export function buildGoogleAuthUrl({
+  clientId,
+  redirectUri,
+  state,
+  scopes = GOOGLE_SIGNIN_SCOPES,
+  prompt = 'select_account',
+  accessType = 'online',
+}) {
   const params = new URLSearchParams({
     client_id: clientId,
     redirect_uri: redirectUri,
     response_type: 'code',
-    scope: GOOGLE_OAUTH_SCOPES,
-    access_type: 'offline',
+    scope: scopes,
+    access_type: accessType,
     prompt,
-    include_granted_scopes: 'true',
     state,
   });
   return `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
+}
+
+export function googleAccessDeniedMessage() {
+  return 'Google sign-in blocked: Revsy is in Google OAuth Testing mode. Add your Gmail under Google Cloud Console → APIs & Services → OAuth consent screen → Test users, then try again. Business Profile access is connected separately on the onboarding screen.';
 }
 
 export function resolveGoogleRedirectUri(req) {

@@ -82,11 +82,15 @@ export default function Onboarding() {
   useEffect(() => {
     const p = new URLSearchParams(window.location.search);
     if (p.get('google') === 'success') {
-      show('Google account connected!');
+      show('Google Business Profile connected!');
       load();
       window.history.replaceState({}, '', '/onboarding');
     }
-    if (p.get('google') === 'error') show('Google connect failed — try again');
+    if (p.get('google') === 'signin') {
+      show('Signed in with Google — connect your Business Profile below.');
+      window.history.replaceState({}, '', '/onboarding');
+    }
+    if (p.get('google') === 'error') show('Google Business connect failed. Add your Gmail as an OAuth test user if the app is in Testing mode.');
   }, []);
 
   const saveProfile = async (e) => {
@@ -249,7 +253,12 @@ export default function Onboarding() {
 
       <div className="card" style={{ marginTop: 20, borderLeft: googleDone ? '4px solid var(--accent)' : '4px solid var(--line)' }}>
         <h3>1. Connect Google Business Profile {googleDone && <span style={{ color: 'var(--accent)' }}> ✓</span>}</h3>
-        <div className="sub">Revsy needs read access to your Google reviews for the last 12 months.</div>
+        <div className="sub">Revsy needs read access to your Google reviews for the last 12 months. This opens a separate Google permission for Business Profile access.</div>
+        {!googleDone ? (
+          <div className="csv-hint" style={{ marginTop: 10 }}>
+            If Google shows “app has not completed verification”, add your Gmail as a test user in Google Cloud Console → OAuth consent screen → Test users.
+          </div>
+        ) : null}
         {googleDone ? (
           <div className="muted" style={{ marginTop: 10 }}>Connected as {status.googleAccountEmail || 'your Google account'}.</div>
         ) : null}

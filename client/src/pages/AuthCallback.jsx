@@ -9,9 +9,24 @@ function parseHashTokens() {
   return Object.fromEntries(new URLSearchParams(hash));
 }
 
+function formatAuthError(message, code) {
+  if (code === 'access_denied' || /testing mode|test user|verification/i.test(message || '')) {
+    return {
+      title: 'Google access blocked',
+      body: message || 'This Google app is in Testing mode. Add your Gmail as a test user in Google Cloud Console → OAuth consent screen → Test users, then try again.',
+      hint: 'After sign-in works, connect Google Business Profile on the onboarding screen (that step uses a separate permission).',
+    };
+  }
+  return {
+    title: 'Sign-in failed',
+    body: message || 'Google sign-in did not complete.',
+    hint: null,
+  };
+}
+
 export default function AuthCallback() {
   const navigate = useNavigate();
-  const [error, setError] = useState('');
+  const [error, setError] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -19,12 +34,13 @@ export default function AuthCallback() {
       try {
         const hash = parseHashTokens();
         const query = new URLSearchParams(window.location.search);
+        const errCode = query.get('code') || hash.error || query.get('error') || '';
 
-        if (query.get('error')) {
-          throw new Error(query.get('error') || 'Google sign-in was cancelled');
-        }
-        if (hash.error || query.get('error_description')) {
-          throw new Error(hash.error_description || query.get('error_description') || 'Google sign-in was cancelled');
+        if (query.get('error') || hash.error) {
+          const msg = query.get('error') || hash.error_description || query.get('error_description') || 'Google sign-in was cancelled';
+          const code = query.get('code') || hash.error || query.get('error') || '';
+          if (!cancelled) setError(formatAuthError(msg, code));
+          return;
         }
 
         const directToken = query.get('token');
@@ -62,7 +78,7 @@ export default function AuthCallback() {
           navigate(data.business?.onboardingCompleted ? '/dashboard' : '/onboarding', { replace: true });
         }
       } catch (err) {
-        if (!cancelled) setError(err.message || 'Sign-in failed');
+        if (!cancelled) setError(formatAuthError(err.message, 'error'));
       }
     })();
     return () => { cancelled = true; };
@@ -70,14 +86,18 @@ export default function AuthCallback() {
 
   return (
     <div className="editorial-shell" style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', padding: 24 }}>
-      <div className="card" style={{ maxWidth: 420, textAlign: 'center' }}>
+      <div className="card" style={{ maxWidth: 480, textAlign: 'center' }}>
         <div className="brand" style={{ justifyContent: 'center', marginBottom: 12 }}><Logo /><span>Revsy</span></div>
-        <h2 style={{ fontSize: 22 }}>{error ? 'Sign-in failed' : 'Finishing Google sign-in…'}</h2>
-        <p className="sub" style={{ marginTop: 8 }}>
-          {error || 'Connecting your Google account and Google Business Profile access.'}
+        <h2 style={{ fontSize: 22 }}>{error ? error.title : 'Finishing Google sign-in…'}</h2>
+        <p className="sub" style={{ marginTop: 8, textAlign: 'left' }}>
+          {error ? error.body : 'Signing you in with Google. Business Profile access is connected on the next onboarding step.'}
         </p>
+        {error?.hint ? <p className="csv-hint" style={{ marginTop: 10, textAlign: 'left' }}>{error.hint}</p> : null}
         {error ? (
-          <button className="btn" style={{ marginTop: 16 }} onClick={() => navigate('/login')}>Back to login</button>
+          <div className="flex col" style={{ gap: 8, marginTop: 16 }}>
+            <button className="btn" onClick={() => navigate('/login')}>Back to login</button>
+            <button className="btn secondary" onClick={() => navigate('/signup')}>Try email sign-up</button>
+          </div>
         ) : null}
       </div>
     </div>

@@ -7,7 +7,7 @@ import { classifyOneReview, weeklyUpdateBusiness, getCurrentSummaryRow, issuesFr
 import { listGoogleLocations, saveSelectedLocation, autoSelectLocationIfSingle, syncGoogleReviewsForBusiness } from './google.js';
 import { buildSupabaseGoogleAuthUrl, getPublicSupabaseConfig, signOAuthState, verifyOAuthState, verifySupabaseAccessToken } from './supabase-auth.js';
 import { getCopy, defaultTemplateFor, defaultMessageTemplates, messagePresetsFor, normalizeCategory, renderBusinessTemplate, resolveMessageTemplates } from './categoryCopy.js';
-import { resolveFrontendUrl, resolveGoogleRedirectUri, buildGoogleAuthUrl, googleClientId, googleClientSecret } from './oauth-urls.js';
+import { resolveFrontendUrl, resolveGoogleRedirectUri, buildGoogleAuthUrl, googleClientId, googleClientSecret, GOOGLE_SIGNIN_SCOPES, GOOGLE_BUSINESS_SCOPES, googleAccessDeniedMessage } from './oauth-urls.js';
 import { extractInboundMessages, extractDeliveryStatuses } from './sentimentFlow.js';
 import { handleCustomerInbound, handleInboundText, applyDeliveryStatus } from './inbound.js';
 
@@ -411,7 +411,14 @@ router.get('/auth/google/start', (req, res) => {
     return res.status(500).json({ error: 'Google OAuth not configured. Set GOOGLE_CLIENT_ID and GOOGLE_REDIRECT_URI env vars.' });
   }
   const oauthState = signOAuthState({ mode: intent, businessName, ts: Date.now() });
-  const url = buildGoogleAuthUrl({ clientId, redirectUri, state: oauthState, prompt: 'consent' });
+  const url = buildGoogleAuthUrl({
+    clientId,
+    redirectUri,
+    state: oauthState,
+    scopes: GOOGLE_SIGNIN_SCOPES,
+    prompt: 'select_account',
+    accessType: 'online',
+  });
   res.redirect(url);
 });
 
@@ -1181,14 +1188,29 @@ router.get('/auth/google', async (req, res) => {
   if (!clientId || !redirectUri) {
     return res.status(500).json({ error: 'Google OAuth not configured. Set GOOGLE_CLIENT_ID and GOOGLE_REDIRECT_URI env vars.' });
   }
-  const url = buildGoogleAuthUrl({ clientId, redirectUri, state: String(businessId), prompt: 'consent' });
+  const url = buildGoogleAuthUrl({
+    clientId,
+    redirectUri,
+    state: String(businessId),
+    scopes: GOOGLE_BUSINESS_SCOPES,
+    prompt: 'consent',
+    accessType: 'offline',
+  });
   res.redirect(url);
 });
 
 router.get('/auth/google/callback', async (req, res) => {
+  const frontendBase = resolveFrontendUrl(req);
+  const oauthError = req.query.error ? String(req.query.error) : '';
+  if (oauthError) {
+    const msg = oauthError === 'access_denied'
+      ? googleAccessDeniedMessage()
+      : String(req.query.error_description || oauthError);
+    return res.redirect(`${frontendBase}/auth/callback?error=${encodeURIComponent(msg)}&code=${encodeURIComponent(oauthError)}`);
+  }
+
   const { code, state } = req.query;
   if (!code || !state) return res.status(400).send('Missing code or state');
-  const frontendBase = resolveFrontendUrl(req);
   try {
     const tokenData = await exchangeGoogleAuthCode(req, code);
     const stateData = verifyOAuthState(state);
@@ -1212,11 +1234,15 @@ router.get('/auth/google/callback', async (req, res) => {
         return res.redirect(`${frontendBase}/auth/callback?error=${encodeURIComponent(result.error)}`);
       }
 
-      await applyGoogleBusinessTokens(result.businessId, tokenData);
+      if (accountEmail) {
+        const db = getDb();
+        await db.from('businesses').update({ google_account_email: accountEmail }).eq('id', result.businessId);
+      }
+
       const sessionToken = await createSessionForBusiness(result.businessId);
       const biz = await getBusiness(result.businessId);
       const dest = biz?.onboardingCompleted ? '/dashboard' : '/onboarding';
-      return res.redirect(`${frontendBase}/auth/callback?token=${encodeURIComponent(sessionToken)}&google=success&next=${encodeURIComponent(dest)}`);
+      return res.redirect(`${frontendBase}/auth/callback?token=${encodeURIComponent(sessionToken)}&google=signin&next=${encodeURIComponent(dest)}`);
     }
 
     const clientId = googleClientId();
@@ -1236,7 +1262,8 @@ router.get('/auth/google/callback', async (req, res) => {
     const redirectTo = `${String(frontendBase).replace(/\/$/, '')}/onboarding?google=success`;
     res.redirect(redirectTo || '/onboarding?google=success');
   } catch (e) {
-    res.redirect(`${frontendBase}/auth/callback?error=${encodeURIComponent(e.message || 'OAuth callback failed')}`);
+    const msg = String(e.message || 'OAuth callback failed');
+    res.redirect(`${frontendBase}/auth/callback?error=${encodeURIComponent(msg)}`);
   }
 });
 
