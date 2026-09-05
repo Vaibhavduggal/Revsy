@@ -1,0 +1,49 @@
+@import "tailwindcss/theme" layer(theme);
+@import "tailwindcss/utilities" layer(utilities);
+
+@theme inline {
+  --color-background: #ffffff;
+  --color-foreground: #1f2430;
+  --color-card: #ffffff;
+  --color-card-foreground: #1f2430;
+  --color-popover: #ffffff;
+  --color-popover-foreground: #1f2430;
+  --color-primary: #e63946;
+  --color-primary-foreground: #ffffff;
+  --color-secondary: #f7f8fa;
+  --color-secondary-foreground: #1f2430;
+  --color-muted: #f7f8fa;
+  --color-muted-foreground: #6b7280;
+  --color-accent: #f7f8fa;
+  --color-accent-foreground: #1f2430;
+  --color-destructive: #dc2626;
+  --color-destructive-foreground: #ffffff;
+  --color-border: #ececf1;
+  --color-input: #ececf1;
+  --color-ring: #e63946;
+  --color-teal-500: #14b8a6;
+  --color-pink-500: #ec4899;
+  --color-green-500: #16a34a;
+  --color-green-800: #166534;
+  --color-green-100: #dcfce7;
+  --color-green-950: #052e16;
+  --color-green-600: #16a34a;
+  --color-red-700: #b91c1c;
+  --color-red-50: #fef2f2;
+  --color-red-950: #450a0a;
+  --color-red-600: #dc2626;
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.625rem;
+  --radius-xl: 0.875rem;
+}
+
+:root {
+  --destructive-foreground: #ffffff;
+  --color-destructive-foreground: #ffffff;
+}
+
+.dark {
+  --destructive-foreground: #ffffff;
+  --color-destructive-foreground: #ffffff;
+}

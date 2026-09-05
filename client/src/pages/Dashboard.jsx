@@ -5,6 +5,7 @@ import { useAuth } from '../auth-context.jsx';
 import { Icon } from '../components/Icons.jsx';
 import { useToast } from '../components/useToast.jsx';
 import { getCopy } from '../utils/categoryCopy.js';
+import ReviewTrendChart from '../components/dashboard/ReviewTrendChart.jsx';
 
 function StatusBadge({ status }) {
   const map = { Sent: 'sent', Opened: 'opened', Reviewed: 'reviewed', Scheduled: 'scheduled' };
@@ -55,25 +56,6 @@ function QuickAdd({ onAdded, copy }) {
           <button type="submit" className="btn" disabled={busy}>{busy ? 'Adding…' : 'Add & schedule'}</button>
         </div>
       </form>
-    </div>
-  );
-}
-
-function PnChart({ weeks }) {
-  const data = (weeks || []).slice(-12);
-  const max = Math.max(1, ...data.map((w) => Math.max(w.positive || 0, w.negative || 0, w.count || 0)));
-  return (
-    <div className="chart" style={{ height: 190 }}>
-      {data.map((w, i) => (
-        <div className="bar-col" key={i} title={`${w.label}: ${w.positive || 0} positive, ${w.negative || 0} negative`}>
-          <span className="val">{(w.positive || 0) + (w.negative || 0)}</span>
-          <div style={{ display: 'flex', gap: 2, alignItems: 'flex-end', height: '100%' }}>
-            <div className="bar" style={{ height: `${((w.positive || 0) / max) * 100}%`, background: 'var(--ok)', minWidth: 14 }} />
-            <div className="bar" style={{ height: `${((w.negative || 0) / max) * 100}%`, background: 'var(--warn)', minWidth: 14 }} />
-          </div>
-          <span className="lbl">{w.label}</span>
-        </div>
-      ))}
     </div>
   );
 }
@@ -281,11 +263,8 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <div className="card" style={{ marginBottom: 16 }}>
-        <h3>Positive vs negative · last 12 weeks</h3>
-        <div className="sub"><span style={{ color: 'var(--ok)', fontWeight: 700 }}>Green</span> = 4★+ · <span style={{ color: 'var(--warn)', fontWeight: 700 }}>Red</span> = below 4★</div>
-        <div className="spacer" />
-        <PnChart weeks={chartWeeks} />
+      <div style={{ marginBottom: 16 }}>
+        <ReviewTrendChart weeks={chartWeeks} onRefresh={load} />
       </div>
 
       <div className="row even" style={{ marginBottom: 16 }}>
