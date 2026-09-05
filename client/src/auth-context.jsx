@@ -13,6 +13,8 @@ function mergeBusiness(data, settings, onboarding) {
     googleConnected: onboarding?.googleConnected ?? data.business?.googleConnected,
     approvalStatus: onboarding?.approvalStatus ?? data.business?.approvalStatus,
     isDemo: settings?.isDemo || data.business?.isDemo || false,
+    category: settings?.category || data.business?.category || 'restaurant',
+    categorySet: settings?.categorySet ?? data.business?.categorySet ?? false,
   };
 }
 
@@ -31,6 +33,8 @@ export function AuthProvider({ children }) {
           googleConnected: o.googleConnected,
           approvalStatus: o.approvalStatus,
           isDemo: s.isDemo || false,
+          category: s.category || 'restaurant',
+          categorySet: !!s.categorySet,
         }))
         .catch(() => { setToken(null); })
         .finally(() => setReady(true));

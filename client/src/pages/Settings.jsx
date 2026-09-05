@@ -5,11 +5,13 @@ import { Icon } from '../components/Icons.jsx';
 import { Toggle } from '../components/Toggle.jsx';
 import { PhoneMockup } from '../components/PhoneMockup.jsx';
 import { useToast } from '../components/useToast.jsx';
+import { getCopy } from '../utils/categoryCopy.js';
 
 const TEMPLATE_VARS = '[customer name], [business name], [google review link]';
 
 export default function Settings() {
   const { business, setBusiness } = useAuth();
+  const copy = getCopy(business?.category);
   const { show, node } = useToast();
   const [form, setForm] = useState({ businessName: '', googleReviewLink: '', messageTemplate: '', delaySeconds: 1800, demoMode: false, whatsappCampaignName: '', whatsappBsp: 'AiSensy' });
   const [delayUnit, setDelayUnit] = useState('minutes');
@@ -53,10 +55,10 @@ export default function Settings() {
   };
 
   const delayLabel = form.demoMode
-    ? 'Demo mode: send 10 seconds after a customer is added'
+    ? `Demo mode: send 10 seconds ${copy.delayAfterAdd}`
     : Number(form.delaySeconds) === 0
-      ? 'Send immediately after a customer is added'
-      : `Send after ${Math.round(Number(form.delaySeconds) / 60)} minute(s) (${form.delaySeconds}s) after a customer is added`;
+      ? `Send immediately ${copy.delayAfterAdd}`
+      : `Send after ${Math.round(Number(form.delaySeconds) / 60)} minute(s) (${form.delaySeconds}s) ${copy.delayAfterAdd}`;
 
   return (
     <div className="page">
@@ -104,7 +106,7 @@ export default function Settings() {
           <div className="field">
             <label>WhatsApp campaign name (AiSensy)</label>
             <input className="input" value={form.whatsappCampaignName} onChange={(e) => update('whatsappCampaignName', e.target.value)} placeholder="Exact live API campaign name" />
-            <span className="csv-hint">Template params sent: customer name, business name, review link.</span>
+            <span className="csv-hint">Template params sent: {copy.person} name, business name, first question.</span>
           </div>
           <div className="field">
             <label>Custom delay</label>
@@ -137,13 +139,13 @@ export default function Settings() {
                 <option value="hours">hours</option>
               </select>
             </div>
-            <span className="csv-hint">Default is 30 minutes. Choose immediate above to send as soon as a customer is added.</span>
+            <span className="csv-hint">Default is 30 minutes. Choose immediate above to send as soon as a {copy.person} is added.</span>
           </div>
           <div className="field">
             <div className="flex between">
               <div>
                 <div style={{ fontWeight: 700, fontSize: 14 }}>Demo mode</div>
-                <div className="csv-hint">Send 10 seconds after adding a customer (for live pitches).</div>
+                <div className="csv-hint">Send 10 seconds after adding a {copy.person} (for live pitches).</div>
               </div>
               <Toggle on={form.demoMode} onChange={(v) => update('demoMode', v)} />
             </div>
@@ -158,7 +160,7 @@ export default function Settings() {
           <div className="spacer" />
           <PhoneMockup
             name="Rahul Sharma"
-            message={preview || 'Hi [customer name], thank you for visiting [business name]! …'}
+            message={preview || `Hi [${copy.person} name], thanks for ${copy.visitGerund} [business name] today! …`}
             businessName={form.businessName}
           />
           <div className="csv-hint" style={{ marginTop: 12, textAlign: 'center' }}>

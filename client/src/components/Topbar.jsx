@@ -2,11 +2,15 @@ import { useLocation } from 'react-router-dom';
 import { getTitle } from '../pageMeta.js';
 import { useShell } from './ShellContext.jsx';
 import { Icon } from './Icons.jsx';
+import { useAuth } from '../auth-context.jsx';
+import { getCopy } from '../utils/categoryCopy.js';
 
 export function Topbar() {
   const { pathname } = useLocation();
   const { search, setSearch, filterOpen, setFilterOpen, view, setView } = useShell();
-  const title = getTitle(pathname);
+  const { business } = useAuth();
+  const copy = getCopy(business?.category);
+  const title = getTitle(pathname, copy);
 
   return (
     <header className="topbar">
@@ -20,7 +24,7 @@ export function Topbar() {
           <Icon.search width={16} height={16} />
           <input
             className="search-input"
-            placeholder="Search customers…"
+            placeholder={copy.searchPlaceholder}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />

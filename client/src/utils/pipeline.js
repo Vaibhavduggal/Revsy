@@ -2,9 +2,9 @@
 export const STAGES = [
   { id: 'to_send', label: 'To Send', hint: 'Awaiting first outreach' },
   { id: 'sent', label: 'Sent', hint: 'Message delivered' },
-  { id: 'opened', label: 'Opened', hint: 'Customer read it' },
-  { id: 'positive', label: 'Positive', hint: 'Replied 👍 — send Google link' },
-  { id: 'negative', label: 'Negative', hint: 'Replied 👎 — private feedback' },
+  { id: 'opened', label: 'Opened', hint: 'Awaiting 😊 or 😞' },
+  { id: 'positive', label: 'Positive', hint: 'Replied 😊 — suggestion or Google ask' },
+  { id: 'negative', label: 'Negative', hint: 'Replied 😞 — private complaint' },
   { id: 'reviewed', label: 'Reviewed on Google', hint: 'Left a public review' },
 ];
 

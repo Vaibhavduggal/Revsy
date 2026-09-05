@@ -85,7 +85,7 @@ export default function Login() {
           <Icon.play width={16} height={16} /> {demoLoading ? 'Loading demo…' : 'View live demo'}
         </button>
         <div className="csv-hint" style={{ textAlign: 'center', marginTop: 10 }}>
-          New restaurant? <a href="/signup">Create an account</a>
+          New gym or restaurant? <a href="/signup">Create an account</a>
         </div>
       </div>
       {node}

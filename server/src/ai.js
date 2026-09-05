@@ -140,7 +140,9 @@ export async function firstRunClustering(businessId, negativeReviews) {
     return [];
   }
   const items = negativeReviews.slice(0, 60).map((r) => ({ id: r.id, rating: r.rating, text: (r.text || '').slice(0, 600) }));
-  const prompt = `You cluster negative restaurant reviews into distinct underlying issues. Use semantic similarity, NOT keyword matching: two reviews in completely different words can be the same issue.\n\nReviews (JSON):\n${JSON.stringify(items)}\n\nReturn ONLY JSON: {"issues":[{"theme":"short label, e.g. Slow service during peak hours","improvement":"one concrete fix the owner can do","review_ids":["<ids from input>"]}]}\nRules: every input review id must appear in exactly one issue. Max 8 issues. Keep theme under 60 chars, improvement under 200 chars.`;
+  const { data: bizRow } = await db.from('businesses').select('category').eq('id', businessId).maybeSingle();
+  const kind = bizRow?.category === 'gym' ? 'gym' : 'restaurant';
+  const prompt = `You cluster negative ${kind} reviews into distinct underlying issues. Use semantic similarity, NOT keyword matching: two reviews in completely different words can be the same issue.\n\nReviews (JSON):\n${JSON.stringify(items)}\n\nReturn ONLY JSON: {"issues":[{"theme":"short label, e.g. Slow service during peak hours","improvement":"one concrete fix the owner can do","review_ids":["<ids from input>"]}]}\nRules: every input review id must appear in exactly one issue. Max 8 issues. Keep theme under 60 chars, improvement under 200 chars.`;
   let issues = [];
   try {
     const out = await llmJson(prompt, { maxTokens: 3000 });
@@ -205,7 +207,9 @@ export async function classifyOneReview(businessId, review) {
     return { decision: issues.length ? 'repeated' : 'new_issue', issueId: issues[0]?.id || null };
   }
   const known = issues.map((i) => ({ id: i.id, theme: i.theme, improvement: i.improvement }));
-  const prompt = `You decide if a new negative restaurant review is the SAME underlying problem as a known issue, or a genuinely NEW issue. Use semantic meaning, NOT keywords.\n\nKnown issues (JSON):\n${JSON.stringify(known)}\n\nNew review:\n{"id":${JSON.stringify(review.id)},"rating":${JSON.stringify(review.rating)},"text":${JSON.stringify(reviewText)}}\n\nReturn ONLY JSON: {"decision":"repeated"|"new_issue","issue_id":"<matching known id if repeated, else null>","theme":"<short label, required if new_issue>","improvement":"<one concrete fix, required if new_issue>"}`;
+  const { data: bizRow } = await db.from('businesses').select('category').eq('id', businessId).maybeSingle();
+  const kind = bizRow?.category === 'gym' ? 'gym' : 'restaurant';
+  const prompt = `You decide if a new negative ${kind} review is the SAME underlying problem as a known issue, or a genuinely NEW issue. Use semantic meaning, NOT keywords.\n\nKnown issues (JSON):\n${JSON.stringify(known)}\n\nNew review:\n{"id":${JSON.stringify(review.id)},"rating":${JSON.stringify(review.rating)},"text":${JSON.stringify(reviewText)}}\n\nReturn ONLY JSON: {"decision":"repeated"|"new_issue","issue_id":"<matching known id if repeated, else null>","theme":"<short label, required if new_issue>","improvement":"<one concrete fix, required if new_issue>"}`;
   let result;
   try {
     const out = await llmJson(prompt, { maxTokens: 600 });

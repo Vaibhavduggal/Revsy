@@ -86,10 +86,14 @@ async function processRow(row) {
 
     // Update customer
     if (customer) {
+      const history = Array.isArray(customer.waHistory) ? [...customer.waHistory] : [];
+      history.push({ from: 'business', type: 'text', text: row.message, at: new Date().toISOString() });
       await db.from('customers').update({
         stage: 'sent',
         last_request_at: new Date().toISOString(),
         last_request_status: 'Sent',
+        wa_step: customer.waStep === 'idle' ? 'awaiting_sentiment' : customer.waStep,
+        wa_history: history,
       }).eq('id', customer.id);
     }
 

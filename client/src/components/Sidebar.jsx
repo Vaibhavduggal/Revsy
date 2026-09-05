@@ -1,15 +1,17 @@
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth-context.jsx';
 import { Icon, Logo } from './Icons.jsx';
+import { getCopy } from '../utils/categoryCopy.js';
 
 export function Sidebar() {
   const { business, logout } = useAuth();
   const navigate = useNavigate();
+  const copy = getCopy(business?.category);
 
   const links = [
     { to: '/dashboard', label: 'Dashboard', icon: Icon.chart },
     { to: '/reviews', label: 'Reviews', icon: Icon.star },
-    { to: '/customers', label: 'Customers', icon: Icon.users },
+    { to: '/customers', label: copy.personPluralTitle, icon: Icon.users },
     { to: '/messages', label: 'Messages', icon: Icon.chat },
     { to: '/analytics', label: 'Analytics', icon: Icon.line },
     { to: '/settings', label: 'Settings', icon: Icon.settings },

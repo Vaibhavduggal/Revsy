@@ -7,8 +7,9 @@ import { Modal } from '../components/Modal.jsx';
 import { PhoneMockup } from '../components/PhoneMockup.jsx';
 import { WhatsAppConversation } from '../components/WhatsAppConversation.jsx';
 import { useToast } from '../components/useToast.jsx';
-import { MESSAGE_PRESETS, renderTemplate, TEMPLATE_VARS } from '../utils/presets.js';
+import { renderTemplate, TEMPLATE_VARS, presetsFor } from '../utils/presets.js';
 import { STAGES, NEXT_ACTION } from '../utils/pipeline.js';
+import { getCopy } from '../utils/categoryCopy.js';
 
 function initials(name) {
   return (name || '?').trim().split(/\s+/).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
@@ -17,11 +18,13 @@ function fmtDate(iso) {
   return new Date(iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
-function CustomizeModal({ customer, business, onClose, onSaved }) {
+function CustomizeModal({ customer, business, onClose, onSaved, copy: copyProp }) {
+  const copy = copyProp || getCopy(business?.category);
   const { show, node } = useToast();
   const [text, setText] = useState(customer.customMessage || '');
   const [preview, setPreview] = useState('');
   const [busy, setBusy] = useState(false);
+  const presets = presetsFor(business?.category);
 
   const render = useCallback((val) => {
     const tpl = val && val.trim() ? val : business.messageTemplate;
@@ -47,11 +50,11 @@ function CustomizeModal({ customer, business, onClose, onSaved }) {
   return (
     <Modal
       title={`Customize message — ${customer.name}`}
-      sub="Override the global template for this customer only. Same placeholders apply."
+      sub={`Override the global template for this ${copy.person} only. Same placeholders apply.`}
       onClose={onClose}
     >
       <div className="flex wrap" style={{ gap: 8, marginBottom: 12 }}>
-        {MESSAGE_PRESETS.map((p) => (
+        {presets.map((p) => (
           <button key={p.id} type="button" className="btn secondary sm" onClick={() => setText(p.template)}>
             {p.label}
           </button>
@@ -75,7 +78,8 @@ function CustomizeModal({ customer, business, onClose, onSaved }) {
   );
 }
 
-function CustomerDrawer({ customer, business, onClose, onChanged }) {
+function CustomerDrawer({ customer, business, onClose, onChanged, copy: copyProp }) {
+  const copy = copyProp || getCopy(business?.category);
   const { show, node } = useToast();
   const [detail, setDetail] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -91,6 +95,7 @@ function CustomerDrawer({ customer, business, onClose, onChanged }) {
   useEffect(() => { load(); }, [load]);
 
   const stage = detail?.customer.stage || customer.stage;
+  const waStep = detail?.customer.waStep || customer.waStep;
 
   const run = async (apiCall, msg) => {
     setBusy(true);
@@ -103,6 +108,9 @@ function CustomerDrawer({ customer, business, onClose, onChanged }) {
   };
 
   const next = NEXT_ACTION[stage];
+  const canSentiment = waStep === 'awaiting_sentiment' || stage === 'opened' || stage === 'sent';
+  const awaitingHappy = waStep === 'awaiting_happy_detail';
+  const awaitingComplaint = waStep === 'awaiting_complaint';
 
   return (
     <div className="modal-backdrop" onMouseDown={onClose}>
@@ -127,9 +135,10 @@ function CustomerDrawer({ customer, business, onClose, onChanged }) {
               <WhatsAppConversation
                 conversation={detail.conversation}
                 businessName={business?.name}
-                interactive={stage === 'opened'}
+                category={business?.category}
+                interactive={canSentiment && !awaitingHappy && !awaitingComplaint && stage !== 'to_send'}
                 onReaction={(reaction) => run(() => api.replyCustomer(customer.id, reaction),
-                  reaction === 'positive' ? `${detail.customer.name} replied 👍 — positive follow-up sent` : `${detail.customer.name} replied 👎 — private feedback link sent`)}
+                  reaction === 'positive' ? `${detail.customer.name} replied 😊` : `${detail.customer.name} replied 😞`)}
               />
             </div>
 
@@ -137,31 +146,26 @@ function CustomerDrawer({ customer, business, onClose, onChanged }) {
               {next?.api === 'send' && (
                 <button className="btn" disabled={busy} onClick={() => run(() => api.sendNow(customer.id), 'Review request sent')}>Send request</button>
               )}
-              {next?.api === 'open' && (
-                <button className="btn" disabled={busy} onClick={() => run(() => api.openCustomer(customer.id), 'Marked as opened')}>Simulate opened</button>
-              )}
-              {(next?.api === 'reply') && (
+              {canSentiment && stage !== 'to_send' && !awaitingHappy && !awaitingComplaint && (stage === 'sent' || stage === 'opened' || waStep === 'awaiting_sentiment') && (
                 <div className="flex wrap" style={{ gap: 8 }}>
-                  <button className="btn green" disabled={busy} onClick={() => run(() => api.replyCustomer(customer.id, 'positive'), '👍 Positive — Google link sent')}>Simulate 👍 reply</button>
-                  <button className="btn warn" disabled={busy} onClick={() => run(() => api.replyCustomer(customer.id, 'negative'), '👎 Negative — feedback link sent')}>Simulate 👎 reply</button>
+                  <button className="btn green" disabled={busy} onClick={() => run(() => api.replyCustomer(customer.id, 'positive'), '😊 Happy — asked for a suggestion')}>Simulate 😊</button>
+                  <button className="btn warn" disabled={busy} onClick={() => run(() => api.replyCustomer(customer.id, 'negative'), '😞 Not great — asked what went wrong')}>Simulate 😞</button>
                 </div>
               )}
-              {next?.api === 'review' && (
-                <button className="btn green" disabled={busy} onClick={() => run(() => api.reviewCustomer(customer.id), 'Marked as reviewed on Google')}>Mark reviewed on Google</button>
-              )}
-              {next?.api === 'feedback' && (
+              {awaitingHappy && (
                 <div className="flex wrap" style={{ gap: 8, width: '100%' }}>
-                  <textarea
-                    className="textarea"
-                    rows={2}
-                    placeholder="Private feedback from customer…"
-                    value={feedbackText}
-                    onChange={(e) => setFeedbackText(e.target.value)}
-                  />
-                  <button className="btn" disabled={busy} onClick={() => run(() => api.feedbackCustomer(customer.id, { complaint: feedbackText }), 'Private feedback saved')}>
-                    Save feedback
-                  </button>
+                  <textarea className="textarea" rows={2} placeholder="Suggestion, or “nothing, you're awesome”" value={feedbackText} onChange={(e) => setFeedbackText(e.target.value)} />
+                  <button className="btn" disabled={busy} onClick={() => run(() => api.inboundCustomer(customer.id, feedbackText || "nothing, you're awesome"), 'Happy follow-up sent')}>Send reply</button>
                 </div>
+              )}
+              {awaitingComplaint && (
+                <div className="flex wrap" style={{ gap: 8, width: '100%' }}>
+                  <textarea className="textarea" rows={2} placeholder={`What went wrong — private to the owner`} value={feedbackText} onChange={(e) => setFeedbackText(e.target.value)} />
+                  <button className="btn warn" disabled={busy} onClick={() => run(() => api.inboundCustomer(customer.id, feedbackText || 'The session was poorly run.'), 'Private complaint saved')}>Send complaint</button>
+                </div>
+              )}
+              {next?.api === 'review' && waStep === 'done' && stage === 'positive' && (
+                <button className="btn green" disabled={busy} onClick={() => run(() => api.reviewCustomer(customer.id), 'Marked as reviewed on Google')}>Mark reviewed on Google</button>
               )}
               {stage === 'reviewed' && <div className="ok-note"><Icon.check width={15} height={15} /> Completed — review is public on Google.</div>}
             </div>
@@ -174,7 +178,7 @@ function CustomerDrawer({ customer, business, onClose, onChanged }) {
         )}
       </div>
       {customizing && detail && (
-        <CustomizeModal customer={detail.customer} business={business} onClose={() => setCustomizing(false)} onSaved={() => { load(); onChanged(); }} />
+        <CustomizeModal customer={detail.customer} business={business} copy={copy} onClose={() => setCustomizing(false)} onSaved={() => { load(); onChanged(); }} />
       )}
       {node}
     </div>
@@ -207,6 +211,7 @@ function CustomerCard({ c, onOpen }) {
 
 export default function Customers() {
   const { business } = useAuth();
+  const copy = getCopy(business?.category);
   const { search, sentiment, view } = useShell();
   const { show, node } = useToast();
   const [customers, setCustomers] = useState([]);
@@ -267,8 +272,8 @@ export default function Customers() {
     <div className="page">
       <div className="page-head">
         <div>
-          <h1>Customers</h1>
-          <div className="sub">Review pipeline · from first message to a Google review</div>
+          <h1>{copy.personPluralTitle}</h1>
+          <div className="sub">{copy.pipelineSub}</div>
         </div>
         <div className="flex wrap" style={{ gap: 8 }}>
           {sentiment === 'all' ? (
@@ -308,7 +313,7 @@ export default function Customers() {
       )}
 
       {importOpen && (
-        <Modal title="Import customers (CSV)" sub="Columns: name, phone. Header row optional." onClose={() => setImportOpen(false)}>
+        <Modal title={copy.importTitle} sub="Columns: name, phone. Header row optional." onClose={() => setImportOpen(false)}>
           <div className="field">
             <label>Paste CSV</label>
             <textarea className="textarea" value={csvText} onChange={(e) => setCsvText(e.target.value)} placeholder={'name,phone\nRahul Sharma,+91 98123 45678'} rows={6} />
@@ -325,6 +330,7 @@ export default function Customers() {
         <CustomerDrawer
           customer={openCustomer}
           business={business}
+          copy={copy}
           onClose={() => setOpenId(null)}
           onChanged={load}
         />

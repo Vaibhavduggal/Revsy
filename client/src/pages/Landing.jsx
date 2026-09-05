@@ -17,10 +17,10 @@ export default function Landing() {
       </header>
 
       <section className="hero">
-        <span className="pill">For restaurants that want more Google reviews — and fewer surprises</span>
+        <span className="pill">For gyms and restaurants that want more Google reviews — and fewer surprises</span>
         <h1>Ask for reviews on WhatsApp. <span className="hl">Fix what keeps coming up.</span></h1>
         <p>
-          Revsy sends a personalized WhatsApp review request after each visit, pulls your real Google reviews,
+          Revsy sends a personalized WhatsApp check-in after each visit or workout, pulls your real Google reviews,
           and uses AI to group negative feedback into the issues you should actually fix.
         </p>
         <div className="cta-row">
@@ -51,7 +51,7 @@ export default function Landing() {
 
       <section className="pricing">
         <h2>Simple pricing</h2>
-        <div className="sub">Built for local restaurants. Cancel anytime.</div>
+        <div className="sub">Built for local gyms and restaurants. Cancel anytime.</div>
         <div className="price-card">
           <div className="amount">₹{PRICE}<span className="per">/month</span></div>
           <div className="sub" style={{ marginTop: 6 }}>You onboard clients from the Revsy admin panel</div>

@@ -6,6 +6,7 @@ import { Icon } from '../components/Icons.jsx';
 import { WhatsAppConversation } from '../components/WhatsAppConversation.jsx';
 import { useToast } from '../components/useToast.jsx';
 import { NEXT_ACTION } from '../utils/pipeline.js';
+import { getCopy } from '../utils/categoryCopy.js';
 
 function initials(name) {
   return (name || '?').trim().split(/\s+/).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
@@ -18,9 +19,9 @@ function lastPreview(stage) {
   const map = {
     to_send: 'Awaiting first outreach',
     sent: 'Message delivered',
-    opened: 'Opened — awaiting reaction',
-    positive: '👍 Positive — Google link sent',
-    negative: '👎 Negative — private feedback link',
+    opened: 'Opened — awaiting 😊 or 😞',
+    positive: '😊 Positive — suggestion or Google ask',
+    negative: '😞 Negative — private complaint',
     reviewed: 'Left a Google review',
   };
   return map[stage] || stage;
@@ -28,10 +29,13 @@ function lastPreview(stage) {
 
 export default function Messages() {
   const { business } = useAuth();
+  const copy = getCopy(business?.category);
   const { sentiment } = useShell();
   const { show, node } = useToast();
   const [customers, setCustomers] = useState([]);
   const [feedback, setFeedback] = useState([]);
+  const [suggestions, setSuggestions] = useState([]);
+  const [complaints, setComplaints] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState(null);
   const [detail, setDetail] = useState(null);
@@ -42,6 +46,8 @@ export default function Messages() {
       const [c, f] = await Promise.all([api.customers(), api.feedback()]);
       setCustomers(c.customers);
       setFeedback(f.feedback);
+      setSuggestions(f.suggestions || (f.feedback || []).filter((x) => x.type === 'suggestion'));
+      setComplaints(f.complaints || (f.feedback || []).filter((x) => x.type !== 'suggestion'));
     } catch (e) { show(e.message); } finally { setLoading(false); }
   }, [show]);
 
@@ -97,7 +103,7 @@ export default function Messages() {
           <div className="sub">{threads.length} active</div>
           <div className="spacer" />
           {loading ? <div className="empty">Loading…</div> : threads.length === 0 ? (
-            <div className="empty">No active conversations yet. Send a request from Customers.</div>
+            <div className="empty">No active conversations yet. Send a request from {copy.personPluralTitle}.</div>
           ) : (
             <div className="thread-items">
               {threads.map((c) => (
@@ -138,9 +144,10 @@ export default function Messages() {
               <WhatsAppConversation
                 conversation={detail.conversation}
                 businessName={business?.name}
-                interactive={stage === 'opened'}
+                category={business?.category}
+                interactive={(stage === 'opened' || stage === 'sent' || detail.customer.waStep === 'awaiting_sentiment')}
                 onReaction={(reaction) => run(() => api.replyCustomer(selectedId, reaction),
-                  reaction === 'positive' ? '👍 Positive — Google link sent' : '👎 Negative — feedback link sent')}
+                  reaction === 'positive' ? '😊 Happy — asked for a suggestion' : '😞 Not great — asked what went wrong')}
               />
 
               <div className="drawer-actions">
@@ -159,30 +166,54 @@ export default function Messages() {
         </div>
       </div>
 
-      <div className="card" style={{ marginTop: 16 }}>
-        <div className="flex between" style={{ marginBottom: 8 }}>
-          <h3 style={{ margin: 0 }}><Icon.lock width={16} height={16} /> Private feedback <span className="badge neg">{feedback.length}</span></h3>
-          <span className="pill demo">Owner-only · never on Google</span>
+      <div className="row even" style={{ marginTop: 16 }}>
+        <div className="card">
+          <div className="flex between" style={{ marginBottom: 8 }}>
+            <h3 style={{ margin: 0 }}>{copy.suggestionsTitle} <span className="badge sent">{suggestions.length}</span></h3>
+          </div>
+          <div className="sub">{copy.suggestionsSub}</div>
+          <div className="spacer" />
+          {suggestions.length === 0 ? (
+            <div className="empty">No suggestions yet.</div>
+          ) : (
+            <table className="table">
+              <thead><tr><th>{copy.personTitle}</th><th>Idea</th><th>Date</th></tr></thead>
+              <tbody>
+                {suggestions.slice(0, 10).map((f) => (
+                  <tr key={f.id}>
+                    <td><b>{f.customerName}</b></td>
+                    <td>{f.complaint}</td>
+                    <td className="muted">{fmtDate(f.createdAt)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
-        <div className="sub">Negative experiences caught before they went public — reach out directly to make it right.</div>
-        <div className="spacer" />
-        {feedback.length === 0 ? (
-          <div className="empty">No private feedback yet. 🎉</div>
-        ) : (
-          <table className="table">
-            <thead><tr><th>Customer</th><th>Phone</th><th>Complaint</th><th>Date</th></tr></thead>
-            <tbody>
-              {feedback.slice(0, 10).map((f) => (
-                <tr key={f.id}>
-                  <td><b>{f.customerName}</b></td>
-                  <td className="muted">{f.phone}</td>
-                  <td>{f.complaint}</td>
-                  <td className="muted">{fmtDate(f.createdAt)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
+        <div className="card">
+          <div className="flex between" style={{ marginBottom: 8 }}>
+            <h3 style={{ margin: 0 }}><Icon.lock width={16} height={16} /> {copy.complaintsTitle} <span className="badge neg">{complaints.length}</span></h3>
+            <span className="pill demo">Owner-only · never on Google</span>
+          </div>
+          <div className="sub">{copy.complaintsSub}</div>
+          <div className="spacer" />
+          {complaints.length === 0 ? (
+            <div className="empty">No private complaints yet.</div>
+          ) : (
+            <table className="table">
+              <thead><tr><th>{copy.personTitle}</th><th>Complaint</th><th>Date</th></tr></thead>
+              <tbody>
+                {complaints.slice(0, 10).map((f) => (
+                  <tr key={f.id}>
+                    <td><b>{f.customerName}</b></td>
+                    <td>{f.complaint}</td>
+                    <td className="muted">{fmtDate(f.createdAt)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
       </div>
       {node}
     </div>

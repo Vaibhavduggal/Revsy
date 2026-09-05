@@ -2,10 +2,13 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api, getToken } from '../api.js';
 import { useToast } from '../components/useToast.jsx';
+import { getCopy } from '../utils/categoryCopy.js';
+import { useAuth } from '../auth-context.jsx';
 
 export default function Onboarding() {
   const nav = useNavigate();
   const { show, node } = useToast();
+  const { setBusiness } = useAuth();
   const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(true);
   const [apiKey, setApiKey] = useState('');
@@ -15,11 +18,20 @@ export default function Onboarding() {
   const [saving, setSaving] = useState(false);
   const [locations, setLocations] = useState([]);
   const [picking, setPicking] = useState(false);
+  const [category, setCategory] = useState('');
+  const [bizName, setBizName] = useState('');
+  const [address, setAddress] = useState('');
+  const [phone, setPhone] = useState('');
+  const [savingProfile, setSavingProfile] = useState(false);
 
   const load = async () => {
     try {
       const s = await api.onboardingStatus();
       setStatus(s);
+      if (s.name) setBizName(s.name);
+      if (s.address) setAddress(s.address);
+      if (s.phone) setPhone(s.phone);
+      if (s.categorySet && s.category) setCategory(s.category);
       if (s.onboardingCompleted) nav('/dashboard', { replace: true });
       if (s.googleConnected && s.needsLocation) {
         try {
@@ -47,6 +59,25 @@ export default function Onboarding() {
     }
     if (p.get('google') === 'error') show('Google connect failed — try again');
   }, []);
+
+  const saveProfile = async (e) => {
+    e.preventDefault();
+    if (category !== 'gym' && category !== 'restaurant') return show('Pick gym or restaurant');
+    if (!bizName.trim()) return show('Business name is required');
+    setSavingProfile(true);
+    try {
+      const r = await api.onboardingProfile({
+        category,
+        name: bizName.trim(),
+        address: address.trim(),
+        phone: phone.trim(),
+      });
+      setBusiness((b) => (b ? { ...b, category: r.category, categorySet: true, name: r.name } : b));
+      show(category === 'gym' ? 'Gym selected' : 'Restaurant selected');
+      await load();
+    } catch (err) { show(err.message); }
+    finally { setSavingProfile(false); }
+  };
 
   const connectGoogle = () => {
     const token = getToken();
@@ -105,7 +136,7 @@ export default function Onboarding() {
         <div className="card" style={{ textAlign: 'center', padding: 40, borderLeft: '4px solid var(--accent)' }}>
           <h3>Waiting for admin approval</h3>
           <div className="sub" style={{ marginTop: 8 }}>
-            Your Google account and review permissions are connected. The Revsy platform owner still needs to approve your restaurant before WhatsApp setup unlocks.
+            Your Google account and review permissions are connected. {getCopy(status.category).approvalWait}
           </div>
           <div className="pill" style={{ marginTop: 16, display: 'inline-block' }}>Checking every few seconds…</div>
           <div className="csv-hint" style={{ marginTop: 12 }}>Connected as {status.googleAccountEmail || 'your Google account'}</div>
@@ -119,11 +150,61 @@ export default function Onboarding() {
   const waDone = status?.whatsappConnected;
   const canDoWhatsapp = status?.approvalStatus === 'approved';
   const bothDone = googleDone && waDone && status?.approvalStatus === 'approved' && !status?.needsLocation;
+  const copy = getCopy(status?.category);
+
+  if (!status?.categorySet) {
+    return (
+      <div className="page" style={{ maxWidth: 640 }}>
+        <h1>Welcome to Revsy</h1>
+        <div className="sub">Step 0 of 3 — tell us what you run so the dashboard uses the right words.</div>
+        <form className="card" style={{ marginTop: 20 }} onSubmit={saveProfile} data-testid="category-step">
+          <h3>Are you a gym or a restaurant?</h3>
+          <div className="sub">This only changes labels and default WhatsApp copy. Reviews, members, and analytics work the same either way.</div>
+          <div className="spacer" />
+          <div className="flex" style={{ gap: 12, flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              className={`btn ${category === 'gym' ? '' : 'secondary'}`}
+              onClick={() => setCategory('gym')}
+              style={{ flex: 1, minWidth: 140, height: 88 }}
+            >
+              <div style={{ fontSize: 28 }}>🏋️</div>
+              <div>Gym</div>
+            </button>
+            <button
+              type="button"
+              className={`btn ${category === 'restaurant' ? '' : 'secondary'}`}
+              onClick={() => setCategory('restaurant')}
+              style={{ flex: 1, minWidth: 140, height: 88 }}
+            >
+              <div style={{ fontSize: 28 }}>🍽️</div>
+              <div>Restaurant</div>
+            </button>
+          </div>
+          <div className="field" style={{ marginTop: 16 }}>
+            <label>Business name</label>
+            <input className="input" value={bizName} onChange={(e) => setBizName(e.target.value)} placeholder="e.g. Burn Gym, Ghumar Mandi" />
+          </div>
+          <div className="field">
+            <label>Address</label>
+            <input className="input" value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Street, city, PIN" />
+          </div>
+          <div className="field">
+            <label>Phone</label>
+            <input className="input" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+91 …" />
+          </div>
+          <button type="submit" className="btn" disabled={savingProfile}>{savingProfile ? 'Saving…' : 'Continue'}</button>
+        </form>
+        {node}
+      </div>
+    );
+  }
 
   return (
     <div className="page" style={{ maxWidth: 640 }}>
       <h1>Welcome to Revsy</h1>
       <div className="sub">Finish these steps in order. Your dashboard stays locked until Google, approval, and WhatsApp are all done.</div>
+      <div className="pill" style={{ marginTop: 10 }}>{copy.categoryLabel}</div>
 
       <div className="card" style={{ marginTop: 20, borderLeft: googleDone ? '4px solid var(--ok)' : '4px solid var(--warn)' }}>
         <h3>1. Connect Google Business Profile {googleDone && <span style={{ color: 'var(--ok)' }}> ✓</span>}</h3>
@@ -136,7 +217,7 @@ export default function Onboarding() {
         </button>
         {status?.needsLocation && (
           <div style={{ marginTop: 16 }}>
-            <div className="sub">This Google account has more than one location. Pick the restaurant Revsy should track.</div>
+            <div className="sub">{copy.locationPick}</div>
             <div className="flex col" style={{ gap: 8, marginTop: 10 }}>
               {locations.length === 0 ? <div className="empty">Loading locations…</div> : locations.map((loc) => (
                 <button key={loc.locationName} type="button" className="btn secondary" disabled={picking} onClick={() => pickLocation(loc)} style={{ textAlign: 'left' }}>
@@ -171,7 +252,7 @@ export default function Onboarding() {
             <div className="field">
               <label>Live API campaign name *</label>
               <input className="input" value={campaignName} onChange={(e) => setCampaignName(e.target.value)} placeholder="Exact name of the live AiSensy API campaign" disabled={!canDoWhatsapp} />
-              <span className="csv-hint">Template variables should be: 1) customer name 2) business name 3) Google review link.</span>
+              <span className="csv-hint">Template variables should be: 1) {copy.person} name 2) business name 3) first WhatsApp question.</span>
             </div>
           ) : (
             <div className="field">

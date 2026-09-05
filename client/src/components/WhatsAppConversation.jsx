@@ -1,4 +1,5 @@
 import { Icon } from './Icons.jsx';
+import { getCopy } from '../utils/categoryCopy.js';
 
 function fmtTime(date) {
   const d = new Date(date || Date.now());
@@ -7,11 +8,13 @@ function fmtTime(date) {
 
 // Renders the simulated WhatsApp conversation from the bubbles the server produces.
 // `interactive` shows tappable quick-reply buttons (for demo mode).
-export function WhatsAppConversation({ conversation, businessName = 'Your Business', interactive, onReaction }) {
+export function WhatsAppConversation({ conversation, businessName = 'Your Business', interactive, onReaction, category }) {
+  const copy = getCopy(category);
+  const avatar = copy.category === 'gym' ? '🏋️' : '🍽️';
   return (
     <div className="wa-screen">
       <div className="wa-bar">
-        <div className="wa-avatar">🍔</div>
+        <div className="wa-avatar">{avatar}</div>
         <div>
           <div className="wa-name">{businessName}</div>
           <div className="wa-status">online</div>

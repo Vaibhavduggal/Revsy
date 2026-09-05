@@ -52,7 +52,7 @@ export async function sendViaMetaCloud({ apiKey, phoneNumberId, phone, message }
   }, { Authorization: `Bearer ${apiKey}` });
 }
 
-export async function sendBusinessWhatsApp(business, { phone, message, customerName }) {
+export async function sendBusinessWhatsApp(business, { phone, message, customerName, session = false, templateParams }) {
   if (message && message.includes('__FORCE_FAIL__')) {
     throw new Error('Simulated delivery failure');
   }
@@ -67,8 +67,26 @@ export async function sendBusinessWhatsApp(business, { phone, message, customerN
     throw new Error('WhatsApp is not connected for this business');
   }
 
+  const params = Array.isArray(templateParams) && templateParams.length
+    ? templateParams
+    : [customerName || 'there', business.name, session ? message : (business.googleReviewLink || message)];
+
+  if (session && phoneNumberId && (provider.includes('meta') || provider.includes('cloud') || provider.includes('official'))) {
+    return sendViaMetaCloud({ apiKey, phoneNumberId, phone, message });
+  }
+
+  if (session && phoneNumberId && !provider.includes('aisensy')) {
+    return sendViaMetaCloud({ apiKey, phoneNumberId, phone, message });
+  }
+
   if (provider.includes('aisensy')) {
-    const params = [customerName || 'there', business.name, business.googleReviewLink || ''];
+    if (session && phoneNumberId) {
+      try {
+        return await sendViaMetaCloud({ apiKey, phoneNumberId, phone, message });
+      } catch {
+        return sendViaAiSensy({ apiKey, campaignName, phone, customerName, templateParams: params });
+      }
+    }
     return sendViaAiSensy({ apiKey, campaignName, phone, customerName, templateParams: params });
   }
 

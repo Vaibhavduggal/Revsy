@@ -6,14 +6,17 @@ import { enqueueSend, retrySend, getFailedSends, processDueSends } from './queue
 import { classifyOneReview, weeklyUpdateBusiness, getCurrentSummaryRow, issuesFromRow, runFirstClusteringForBusiness } from './ai.js';
 import { listGoogleLocations, saveSelectedLocation, autoSelectLocationIfSingle, syncGoogleReviewsForBusiness } from './google.js';
 import { buildSupabaseGoogleAuthUrl, getPublicSupabaseConfig, signOAuthState, verifyOAuthState, verifySupabaseAccessToken } from './supabase-auth.js';
+import { getCopy, defaultTemplateFor, messagePresetsFor, normalizeCategory } from './categoryCopy.js';
+import { extractInboundMessages } from './sentimentFlow.js';
+import { handleCustomerInbound, handleInboundText } from './inbound.js';
 
 const router = Router();
 
 function positiveFollowUp(link) {
-  return `Awesome! 🙌 If you have 30 seconds, please leave us a Google review: ${link}`;
+  return `That means a lot! Could you drop us a quick Google review? ${link}`;
 }
-function negativeFollowUp(link) {
-  return `We're really sorry to hear that. We'd love to make it right privately — please tell us what happened: ${link}`;
+function negativeFollowUp(_link) {
+  return 'Sorry to hear that. Tell us what went wrong so we can fix it — this goes straight to the owner, not public.';
 }
 
 function effectiveDelay(business) {
@@ -24,16 +27,12 @@ function newId(prefix) {
   return `${prefix}_${Date.now()}_${Math.floor(Math.random() * 1e6)}`;
 }
 
-export const MESSAGE_PRESETS = [
-  { id: 'casual', label: 'Casual', template: 'Hey [customer name]! Hope you enjoyed [business name] today 😄 Drop us a quick Google review if you can: [google review link]' },
-  { id: 'warm', label: 'Warm / Thankful', template: 'Hi [customer name], thank you so much for visiting [business name]! We would be grateful if you shared your experience: [google review link]' },
-  { id: 'first_time', label: 'First-time visitor', template: 'Welcome to [business name], [customer name]! We hope it was love at first bite. If so, a 30-second Google review would mean the world: [google review link]' },
-];
+export const MESSAGE_PRESETS = messagePresetsFor('restaurant');
 
 export function render(business, customer) {
   const template = (customer && customer.customMessage && customer.customMessage.trim())
     ? customer.customMessage
-    : business.messageTemplate;
+    : (business.messageTemplate || defaultTemplateFor(business.category));
   return renderTemplate(template, {
     customerName: customer?.name,
     businessName: business.name,
@@ -42,20 +41,44 @@ export function render(business, customer) {
 }
 
 function renderConversation(business, customer, request, feedbackForCustomer) {
+  const copy = getCopy(business.category);
+  const history = Array.isArray(customer.waHistory) ? customer.waHistory : [];
+  if (history.length) {
+    const bubbles = [];
+    if (request && request.status !== 'Scheduled') {
+      bubbles.push({ from: 'business', type: 'text', text: request.message || render(business, customer) });
+    }
+    for (const h of history) {
+      bubbles.push({
+        from: h.from,
+        type: h.type || (h.from === 'customer' ? 'text' : 'text'),
+        text: h.text,
+        private: !!h.private,
+      });
+    }
+    if (customer.waStep === 'awaiting_sentiment') {
+      bubbles.push({
+        from: 'business',
+        type: 'quickreply',
+        text: 'How was your experience?',
+        buttons: [{ label: '😊', value: 'positive' }, { label: '😞', value: 'negative' }],
+      });
+    }
+    return bubbles;
+  }
+
   const bubbles = [];
   const initialMsg = (request && request.message) ? request.message : render(business, customer);
   if (request && request.status !== 'Scheduled') {
     bubbles.push({ from: 'business', type: 'text', text: initialMsg });
   }
-  if (customer.stage === 'opened') {
-    bubbles.push({ from: 'business', type: 'quickreply', text: 'How was your experience?', buttons: [{ label: '👍 Great', value: 'positive' }, { label: '👎 Not great', value: 'negative' }] });
+  if (customer.stage === 'opened' || customer.waStep === 'awaiting_sentiment') {
+    bubbles.push({ from: 'business', type: 'quickreply', text: `How was your experience at ${copy.categoryLabel.toLowerCase() === 'gym' ? 'the gym' : 'our place'}?`, buttons: [{ label: '😊', value: 'positive' }, { label: '😞', value: 'negative' }] });
   }
   if (customer.sentiment === 'positive') {
-    bubbles.push({ from: 'customer', type: 'reaction', text: '👍 Great' });
-    bubbles.push({ from: 'business', type: 'link', text: positiveFollowUp(business.googleReviewLink) });
+    bubbles.push({ from: 'customer', type: 'reaction', text: '😊' });
   } else if (customer.sentiment === 'negative') {
-    bubbles.push({ from: 'customer', type: 'reaction', text: '👎 Not great' });
-    bubbles.push({ from: 'business', type: 'link', text: negativeFollowUp(business.feedbackLink) });
+    bubbles.push({ from: 'customer', type: 'reaction', text: '😞' });
     if (feedbackForCustomer && feedbackForCustomer.complaint) {
       bubbles.push({ from: 'customer', type: 'text', text: feedbackForCustomer.complaint, private: true });
     }
@@ -163,6 +186,56 @@ router.get('/config/public', (_req, res) => {
   res.json(getPublicSupabaseConfig());
 });
 
+function verifyWhatsappWebhook(req, res) {
+  const mode = req.query['hub.mode'];
+  const token = req.query['hub.verify_token'];
+  const challenge = req.query['hub.challenge'];
+  const expected = process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN || '';
+  if (mode === 'subscribe' && expected && token === expected) {
+    return res.status(200).send(String(challenge || ''));
+  }
+  if (mode === 'subscribe' && !expected) {
+    return res.status(200).send(String(challenge || ''));
+  }
+  return res.status(403).json({ error: 'Forbidden' });
+}
+
+async function processWebhookPayload(payload, res) {
+  const messages = extractInboundMessages(payload);
+  const results = [];
+  for (const msg of messages) {
+    try {
+      results.push(await handleInboundText(msg.phone, msg.text));
+    } catch (e) {
+      results.push({ ok: false, phone: msg.phone, error: e.message });
+    }
+  }
+  res.json({ ok: true, received: messages.length, results });
+}
+
+router.get('/webhooks/whatsapp', verifyWhatsappWebhook);
+router.post('/webhooks/whatsapp', async (req, res) => {
+  try {
+    await processWebhookPayload(req.body || {}, res);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+router.post('/webhooks/aisensy', async (req, res) => {
+  try {
+    await processWebhookPayload(req.body || {}, res);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+router.post('/webhooks/inbound', async (req, res) => {
+  try {
+    await processWebhookPayload(req.body || {}, res);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 router.get('/auth/supabase/google', (req, res) => {
   try {
     const businessName = req.query.businessName ? String(req.query.businessName).trim() : '';
@@ -234,6 +307,8 @@ router.post('/auth/supabase', async (req, res) => {
       pre_approved: preApproved,
       approved_at: null,
       rejected_at: null,
+      category: 'restaurant',
+      category_set: false,
     });
   }
 
@@ -323,7 +398,7 @@ async function createCustomerAndSchedule(business, name, phone) {
   const db = getDb();
   const customerId = newId('cust');
   const requestId = newId('req');
-  const customerRow = { id: customerId, business_id: business.id, name, phone, custom_message: '', stage: 'to_send', sentiment: null, complaint: '', created_at: new Date().toISOString(), last_request_at: null, last_request_status: null };
+  const customerRow = { id: customerId, business_id: business.id, name, phone, custom_message: '', stage: 'to_send', sentiment: null, complaint: '', created_at: new Date().toISOString(), last_request_at: null, last_request_status: null, wa_step: 'awaiting_sentiment', wa_history: [] };
   const requestRow = { id: requestId, business_id: business.id, customer_id: customerId, customer_name: name, phone, message: '', status: 'Scheduled', created_at: new Date().toISOString(), sent_at: null, opened_at: null, reviewed_at: null };
   await db.from('customers').insert(customerRow);
   await db.from('requests').insert(requestRow);
@@ -385,7 +460,7 @@ router.post('/customers/:id/open', auth, async (req, res) => {
     if (reqData.status === 'Sent') updates.status = 'Opened';
     await db.from('requests').update(updates).eq('id', reqData.id);
   }
-  await db.from('customers').update({ stage: 'opened', last_request_status: 'Opened' }).eq('id', customer.id);
+  await db.from('customers').update({ stage: 'opened', last_request_status: 'Opened', wa_step: customer.waStep === 'idle' ? 'awaiting_sentiment' : customer.waStep }).eq('id', customer.id);
   res.json({ customer: { id: customer.id, stage: 'opened' } });
 });
 
@@ -394,26 +469,27 @@ router.post('/customers/:id/reply', auth, async (req, res) => {
   const { data: custData } = await db.from('customers').select('*').eq('id', req.params.id).eq('business_id', req.business.id).single();
   if (!custData) return res.status(404).json({ error: 'Customer not found' });
   const customer = mapCustomer(custData);
-  if (customer.stage !== 'opened') return res.status(400).json({ error: `Cannot reply from stage "${customer.stage}"` });
-  const { reaction } = req.body || {};
-  if (reaction !== 'positive' && reaction !== 'negative') return res.status(400).json({ error: 'reaction must be "positive" or "negative"' });
-  const { data: reqData } = await db.from('requests').select('*').eq('customer_id', customer.id).order('created_at', { ascending: false }).limit(1).single();
-  if (reqData) await db.from('requests').update({ reaction }).eq('id', reqData.id);
-  const now = new Date().toISOString();
-  await db.from('customers').update({ sentiment: reaction, stage: reaction }).eq('id', customer.id);
-
-  if (reaction === 'negative') {
-    const { data: existing } = await db.from('feedback').select('*').eq('customer_id', customer.id).single();
-    if (!existing) {
-      await db.from('feedback').insert({ id: `fb_${customer.id}`, business_id: req.business.id, customer_id: customer.id, customer_name: customer.name, phone: customer.phone, complaint: customer.complaint || '', created_at: now });
-    } else {
-      await db.from('feedback').update({ created_at: now }).eq('id', existing.id);
-    }
-    await recordActivity(req.business.id, { type: 'negative_reply', customerName: customer.name, phone: customer.phone, message: negativeFollowUp(req.business.feedbackLink), status: 'Negative' });
-  } else {
-    await recordActivity(req.business.id, { type: 'positive_reply', customerName: customer.name, phone: customer.phone, message: positiveFollowUp(req.business.googleReviewLink), status: 'Positive' });
+  const { reaction, text } = req.body || {};
+  let inboundText = text;
+  if (!inboundText) {
+    if (reaction === 'positive') inboundText = '😊';
+    else if (reaction === 'negative') inboundText = '😞';
   }
-  res.json({ customer: { id: customer.id, stage: reaction, sentiment: reaction } });
+  if (!inboundText) return res.status(400).json({ error: 'reaction or text is required' });
+  const result = await handleCustomerInbound(req.business, customer, String(inboundText));
+  const { data: updated } = await db.from('customers').select('*').eq('id', customer.id).single();
+  res.json({ customer: mapCustomer(updated), ...result });
+});
+
+router.post('/customers/:id/inbound', auth, async (req, res) => {
+  const db = getDb();
+  const { data: custData } = await db.from('customers').select('*').eq('id', req.params.id).eq('business_id', req.business.id).single();
+  if (!custData) return res.status(404).json({ error: 'Customer not found' });
+  const text = String(req.body?.text || '').trim();
+  if (!text) return res.status(400).json({ error: 'text is required' });
+  const result = await handleCustomerInbound(req.business, mapCustomer(custData), text);
+  const { data: updated } = await db.from('customers').select('*').eq('id', req.params.id).single();
+  res.json({ customer: mapCustomer(updated), ...result });
 });
 
 router.post('/customers/:id/review', auth, async (req, res) => {
@@ -447,7 +523,7 @@ router.post('/customers/:id/feedback', auth, async (req, res) => {
   const now = new Date().toISOString();
   const { data: existing } = await db.from('feedback').select('*').eq('customer_id', customer.id).single();
   if (!existing) {
-    await db.from('feedback').insert({ id: `fb_${customer.id}`, business_id: req.business.id, customer_id: customer.id, customer_name: customer.name, phone: customer.phone, complaint: text, created_at: now, submitted_at: now });
+    await db.from('feedback').insert({ id: `fb_${customer.id}`, business_id: req.business.id, customer_id: customer.id, customer_name: customer.name, phone: customer.phone, complaint: text, type: 'complaint', created_at: now, submitted_at: now });
   } else {
     await db.from('feedback').update({ complaint: text, customer_name: name ? String(name).trim() : customer.name, phone: phone ? String(phone).trim() : customer.phone, submitted_at: now }).eq('id', existing.id);
   }
@@ -460,7 +536,7 @@ router.post('/customers/:id/reset', auth, async (req, res) => {
   const { data: custData } = await db.from('customers').select('*').eq('id', req.params.id).eq('business_id', req.business.id).single();
   if (!custData) return res.status(404).json({ error: 'Customer not found' });
   const customer = mapCustomer(custData);
-  await db.from('customers').update({ stage: 'to_send', sentiment: null, complaint: '' }).eq('id', customer.id);
+  await db.from('customers').update({ stage: 'to_send', sentiment: null, complaint: '', wa_step: 'idle', wa_history: [] }).eq('id', customer.id);
   await db.from('feedback').delete().eq('customer_id', customer.id);
   await db.from('reviews').delete().eq('customer_id', customer.id);
   await db.from('requests').update({ status: 'Scheduled', reaction: null, opened_at: null, reviewed_at: null }).eq('customer_id', customer.id);
@@ -502,7 +578,9 @@ router.post('/render', auth, async (req, res) => {
 router.get('/feedback', auth, async (req, res) => {
   const list = await getFeedbackForBusiness(req.business.id);
   list.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-  res.json({ feedback: list, total: list.length });
+  const suggestions = list.filter((f) => f.type === 'suggestion');
+  const complaints = list.filter((f) => f.type !== 'suggestion');
+  res.json({ feedback: list, suggestions, complaints, total: list.length });
 });
 
 router.get('/reviews', auth, async (req, res) => {
@@ -537,9 +615,10 @@ router.get('/reviews/list', auth, async (req, res) => {
   const positive = reviews.filter((r) => (r.rating || 5) >= 4).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).map((r) => ({ id: r.id, customerName: r.customerName || 'Anonymous', rating: r.rating, text: r.text || '', source: r.source || 'internal', createdAt: r.createdAt, isRead: !!r.isRead }));
   const negativeFromReviews = reviews.filter((r) => (r.rating || 5) < 4).map((r) => ({ id: r.id, customerName: r.customerName || 'Anonymous', rating: r.rating, text: r.text || '', source: r.source || 'google', createdAt: r.createdAt, isRead: !!r.isRead, aiFlag: r.aiFlag || null, aiIssueId: r.aiIssueId || null }));
   const feedbackList = await getFeedbackForBusiness(biz.id);
-  const negativeFromFeedback = feedbackList.map((f) => ({ id: f.id, customerName: f.customerName || 'Anonymous', rating: null, text: f.complaint || '', source: 'internal', createdAt: f.createdAt, isRead: true, aiFlag: null, aiIssueId: null }));
-  const negative = [...negativeFromReviews, ...negativeFromFeedback].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-  res.json({ positive, negative });
+  const suggestions = feedbackList.filter((f) => f.type === 'suggestion').sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  const complaints = feedbackList.filter((f) => f.type !== 'suggestion').sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  const negative = negativeFromReviews.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  res.json({ positive, negative, suggestions, complaints });
 });
 
 router.get('/reviews/all', auth, async (req, res) => {
@@ -739,10 +818,11 @@ router.get('/analytics', auth, async (req, res) => {
     sentimentWeeks.push({ label: `W${12 - i}`, positive: pos, negative: neg, rate: tot ? Math.round((pos / tot) * 1000) / 10 : null });
   }
 
-  const keptOffGoogleThisMonth = feedback.filter((f) => { const d = new Date(f.createdAt); return d.getFullYear() === thisYear && d.getMonth() === thisMonth; }).length;
-  const recentFeedback = feedback.slice(0, 8).map((f) => ({ id: f.id, customerName: f.customerName, phone: f.phone, complaint: f.complaint, date: f.createdAt }));
+  const keptOffGoogleThisMonth = feedback.filter((f) => f.type !== 'suggestion' && (() => { const d = new Date(f.createdAt); return d.getFullYear() === thisYear && d.getMonth() === thisMonth; })()).length;
+  const recentFeedback = feedback.filter((f) => f.type !== 'suggestion').slice(0, 8).map((f) => ({ id: f.id, customerName: f.customerName, phone: f.phone, complaint: f.complaint, date: f.createdAt, type: f.type }));
+  const recentSuggestions = feedback.filter((f) => f.type === 'suggestion').slice(0, 8).map((f) => ({ id: f.id, customerName: f.customerName, phone: f.phone, complaint: f.complaint, date: f.createdAt, type: f.type }));
 
-  res.json({ total: reviews.length, reviewsThisMonth, reviewsLastMonth, momPct, weeks, dow, dowLabels: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'], avgTimeToReview, funnel, sentiment: { positives, negatives, totalReacted, positiveRate, weeks: sentimentWeeks, keptOffGoogleThisMonth, recentFeedback } });
+  res.json({ total: reviews.length, reviewsThisMonth, reviewsLastMonth, momPct, weeks, dow, dowLabels: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'], avgTimeToReview, funnel, sentiment: { positives, negatives, totalReacted, positiveRate, weeks: sentimentWeeks, keptOffGoogleThisMonth, recentFeedback, recentSuggestions } });
 });
 
 router.get('/activity', auth, async (req, res) => {
@@ -753,13 +833,13 @@ router.get('/activity', auth, async (req, res) => {
 
 router.get('/settings', auth, (req, res) => {
   const b = req.business;
-  res.json({ businessId: b.id, businessName: b.name, googleReviewLink: b.googleReviewLink, feedbackLink: b.feedbackLink, messageTemplate: b.messageTemplate, delaySeconds: b.delaySeconds, demoMode: b.demoMode, reviewsReceived: b.reviewsReceived || 0, placeId: b.placeId || '', whatsappStatus: b.whatsapp?.status || 'not_connected', whatsappBsp: b.whatsapp?.bsp || '', whatsappCampaignName: b.whatsapp?.campaignName || '', onboardingCompleted: !!b.onboardingCompleted, isDemo: !!b.isDemo, googleConnected: !!b.googleConnected, approvalStatus: b.approvalStatus || 'pending_approval' });
+  res.json({ businessId: b.id, businessName: b.name, googleReviewLink: b.googleReviewLink, feedbackLink: b.feedbackLink, messageTemplate: b.messageTemplate, delaySeconds: b.delaySeconds, demoMode: b.demoMode, reviewsReceived: b.reviewsReceived || 0, placeId: b.placeId || '', whatsappStatus: b.whatsapp?.status || 'not_connected', whatsappBsp: b.whatsapp?.bsp || '', whatsappCampaignName: b.whatsapp?.campaignName || '', onboardingCompleted: !!b.onboardingCompleted, isDemo: !!b.isDemo, googleConnected: !!b.googleConnected, approvalStatus: b.approvalStatus || 'pending_approval', category: b.category || 'restaurant', categorySet: !!b.categorySet, address: b.address || '', phone: b.phone || '' });
 });
 
 router.put('/settings', auth, async (req, res) => {
   const db = getDb();
   const b = req.business;
-  const { businessName, googleReviewLink, feedbackLink, messageTemplate, delaySeconds, demoMode, placeId, whatsappCampaignName, whatsappBsp } = req.body || {};
+  const { businessName, googleReviewLink, feedbackLink, messageTemplate, delaySeconds, demoMode, placeId, whatsappCampaignName, whatsappBsp, category } = req.body || {};
   const updates = {};
   if (typeof businessName === 'string' && businessName.trim()) updates.name = businessName.trim();
   if (typeof googleReviewLink === 'string') updates.google_review_link = googleReviewLink.trim();
@@ -768,6 +848,10 @@ router.put('/settings', auth, async (req, res) => {
   if (Number.isFinite(Number(delaySeconds))) updates.delay_seconds = Number(delaySeconds);
   if (typeof demoMode === 'boolean') updates.demo_mode = demoMode;
   if (typeof placeId === 'string') updates.place_id = placeId.trim();
+  if (typeof category === 'string' && ['gym', 'restaurant'].includes(category)) {
+    updates.category = category;
+    updates.category_set = true;
+  }
   if (typeof whatsappCampaignName === 'string' || typeof whatsappBsp === 'string') {
     const bsp = (typeof whatsappBsp === 'string' && whatsappBsp.trim()) ? whatsappBsp.trim() : (b.whatsapp?.bsp || 'AiSensy');
     const campaign = typeof whatsappCampaignName === 'string' ? whatsappCampaignName.trim() : (b.whatsapp?.campaignName || '');
@@ -798,7 +882,32 @@ router.get('/onboarding/status', auth, async (req, res) => {
     isRejected: b.approvalStatus === 'rejected',
     googleLocationName: b.googleLocationName || null,
     needsLocation: !!b.googleConnected && !b.googleLocationName,
+    category: b.category || 'restaurant',
+    categorySet: !!b.categorySet,
+    name: b.name || '',
+    address: b.address || '',
+    phone: b.phone || '',
   });
+});
+
+router.post('/onboarding/profile', auth, async (req, res) => {
+  const db = getDb();
+  const { category, name, address, phone } = req.body || {};
+  const cat = normalizeCategory(category);
+  if (!['gym', 'restaurant'].includes(String(category || '').toLowerCase())) {
+    return res.status(400).json({ error: 'Pick gym or restaurant' });
+  }
+  const updates = {
+    category: cat,
+    category_set: true,
+    message_template: defaultTemplateFor(cat),
+  };
+  if (typeof name === 'string' && name.trim()) updates.name = name.trim();
+  if (typeof address === 'string') updates.address = address.trim();
+  if (typeof phone === 'string') updates.phone = phone.trim();
+  await db.from('businesses').update(updates).eq('id', req.business.id);
+  const updated = await getBusiness(req.business.id);
+  res.json({ ok: true, category: updated.category, categorySet: true, name: updated.name, address: updated.address, phone: updated.phone });
 });
 
 router.post('/onboarding/whatsapp', auth, async (req, res) => {
@@ -927,6 +1036,7 @@ router.get('/auth/google/callback', async (req, res) => {
 
 router.post('/onboarding/complete', auth, async (req, res) => {
   const b = req.business;
+  if (!b.categorySet) return res.status(400).json({ error: 'Pick gym or restaurant first' });
   if (!b.googleConnected) return res.status(400).json({ error: 'Google not connected yet' });
   if (b.whatsapp?.status !== 'connected') return res.status(400).json({ error: 'WhatsApp not connected yet' });
   if (b.approvalStatus !== 'approved') return res.status(400).json({ error: 'Waiting for admin approval' });
@@ -961,7 +1071,7 @@ router.get('/admin/businesses', adminAuth, async (req, res) => {
     const { count: custCount } = await db.from('customers').select('*', { count: 'exact', head: true }).eq('business_id', b.id);
     const { count: reviewCount } = await db.from('reviews').select('*', { count: 'exact', head: true }).eq('business_id', b.id);
     list.push({
-      id: b.id, name: b.name, ownerEmail: b.owner_email, subscriptionStatus: b.subscription_status, isDemo: !!b.is_demo,
+      id: b.id, name: b.name, ownerEmail: b.owner_email, category: b.category || 'restaurant', subscriptionStatus: b.subscription_status, isDemo: !!b.is_demo,
       approvalStatus: b.approval_status || 'pending_approval', googleConnected: !!b.google_connected,
       requestsSent: reqCount || 0, customersCount: custCount || 0, reviewsCount: reviewCount || 0, createdAt: b.created_at,
       whatsapp: { bsp: b.whatsapp_bsp || '', status: b.whatsapp_status || 'not_connected', phoneNumberId: b.whatsapp_phone_number_id || '', campaignName: b.whatsapp_campaign_name || '' },
@@ -973,16 +1083,17 @@ router.get('/admin/businesses', adminAuth, async (req, res) => {
 
 router.post('/admin/businesses', adminAuth, async (req, res) => {
   const db = getDb();
-  const { name, ownerEmail, password, googleReviewLink } = req.body || {};
+  const { name, ownerEmail, password, googleReviewLink, category } = req.body || {};
   if (!name || !ownerEmail || !password) return res.status(400).json({ error: 'name, ownerEmail and password are required' });
   const { data: existing } = await db.from('businesses').select('*').eq('owner_email', ownerEmail).single();
   if (existing) return res.status(409).json({ error: 'A business with that owner email already exists' });
   const business = {
     id: newId('biz'), name: String(name).trim(), owner_email: String(ownerEmail).trim(), password: hashPassword(password), is_demo: false,
     google_review_link: googleReviewLink ? String(googleReviewLink).trim() : '', feedback_link: '', address: '', phone: '', description: '',
-    message_template: defaultTemplate, delay_seconds: 7200, demo_mode: false, subscription_status: 'trial', created_at: new Date().toISOString(),
+    message_template: defaultTemplateFor(normalizeCategory(category)), delay_seconds: 7200, demo_mode: false, subscription_status: 'trial', created_at: new Date().toISOString(),
     reviews_received: 0, place_id: '', whatsapp_bsp: '', whatsapp_api_key: '', whatsapp_phone_number_id: '', whatsapp_status: 'not_connected',
     google_access_token: null, google_refresh_token: null, google_token_expires_at: null, google_connected: false, google_account_email: null, onboarding_completed: false,
+    category: normalizeCategory(category), category_set: ['gym', 'restaurant'].includes(String(category || '').toLowerCase()),
   };
   await db.from('businesses').insert(business);
   res.json({ business: { id: business.id, name: business.name, ownerEmail: business.owner_email } });
@@ -1079,6 +1190,7 @@ router.post('/signup', async (req, res) => {
     reviews_received: 0, place_id: '', whatsapp_bsp: '', whatsapp_api_key: '', whatsapp_phone_number_id: '', whatsapp_status: 'not_connected',
     google_access_token: null, google_refresh_token: null, google_token_expires_at: null, google_connected: false, google_account_email: null, onboarding_completed: false,
     approval_status: 'pending_approval', pre_approved: preApproved, approved_at: null, rejected_at: null,
+    category: 'restaurant', category_set: false,
   };
   // if pre-approved, we will approve after Google connect, not immediately - keep pending for now, but mark pre_approved
   await db.from('businesses').insert(business);
@@ -1143,7 +1255,7 @@ router.post('/reset-db', auth, async (req, res) => {
 });
 
 function toBusinessRow(obj) {
-  return { id: obj.id, name: obj.name, owner_email: obj.ownerEmail, password: obj.passwordHash, is_demo: obj.isDemo, google_review_link: obj.googleReviewLink, feedback_link: obj.feedbackLink, address: obj.address, phone: obj.phone, description: obj.description, message_template: obj.messageTemplate, delay_seconds: obj.delaySeconds, demo_mode: obj.demoMode, subscription_status: obj.subscriptionStatus, created_at: obj.createdAt, place_id: obj.placeId, whatsapp_bsp: obj.whatsapp?.bsp || '', whatsapp_api_key: obj.whatsapp?.apiKey || '', whatsapp_phone_number_id: obj.whatsapp?.phoneNumberId || '', whatsapp_status: obj.whatsapp?.status || 'not_connected', reviews_received: obj.reviewsReceived || 0, google_access_token: obj.googleAccessToken || null, google_refresh_token: obj.googleRefreshToken || null, google_token_expires_at: obj.googleTokenExpiresAt || null, google_connected: !!obj.googleConnected, google_account_email: obj.googleAccountEmail || null, onboarding_completed: !!obj.onboardingCompleted, approval_status: obj.approvalStatus || 'pending_approval', pre_approved: !!obj.preApproved, approved_at: obj.approvedAt || null, rejected_at: obj.rejectedAt || null };
+  return { id: obj.id, name: obj.name, owner_email: obj.ownerEmail, password: obj.passwordHash, is_demo: obj.isDemo, google_review_link: obj.googleReviewLink, feedback_link: obj.feedbackLink, address: obj.address, phone: obj.phone, description: obj.description, message_template: obj.messageTemplate, delay_seconds: obj.delaySeconds, demo_mode: obj.demoMode, subscription_status: obj.subscriptionStatus, created_at: obj.createdAt, place_id: obj.placeId, whatsapp_bsp: obj.whatsapp?.bsp || '', whatsapp_api_key: obj.whatsapp?.apiKey || '', whatsapp_phone_number_id: obj.whatsapp?.phoneNumberId || '', whatsapp_status: obj.whatsapp?.status || 'not_connected', reviews_received: obj.reviewsReceived || 0, google_access_token: obj.googleAccessToken || null, google_refresh_token: obj.googleRefreshToken || null, google_token_expires_at: obj.googleTokenExpiresAt || null, google_connected: !!obj.googleConnected, google_account_email: obj.googleAccountEmail || null, onboarding_completed: !!obj.onboardingCompleted, approval_status: obj.approvalStatus || 'pending_approval', pre_approved: !!obj.preApproved, approved_at: obj.approvedAt || null, rejected_at: obj.rejectedAt || null, category: obj.category === 'gym' ? 'gym' : 'restaurant', category_set: !!obj.categorySet };
 }
 function toCustomerRow(obj) {
   return { id: obj.id, business_id: obj.businessId, name: obj.name, phone: obj.phone, custom_message: obj.customMessage || '', stage: obj.stage || 'to_send', sentiment: obj.sentiment || null, complaint: obj.complaint || '', created_at: obj.createdAt, last_request_at: obj.lastRequestAt, last_request_status: obj.lastRequestStatus };
@@ -1155,7 +1267,7 @@ function toReviewRow(obj) {
   return { id: obj.id, business_id: obj.businessId, customer_id: obj.customerId, customer_name: obj.customerName, rating: obj.rating, text: obj.text || '', source: obj.source || 'internal', google_review_id: obj.googleReviewId || null, request_id: obj.requestId, sent_at: obj.sentAt, created_at: obj.createdAt, is_read: !!obj.isRead, ai_flag: obj.aiFlag || null, ai_issue_id: obj.aiIssueId || null };
 }
 function toFeedbackRow(obj) {
-  return { id: obj.id, business_id: obj.businessId, customer_id: obj.customerId, customer_name: obj.customerName, phone: obj.phone, complaint: obj.complaint || '', google_review_id: obj.googleReviewId || null, created_at: obj.createdAt, submitted_at: obj.submittedAt || null };
+  return { id: obj.id, business_id: obj.businessId, customer_id: obj.customerId, customer_name: obj.customerName, phone: obj.phone, complaint: obj.complaint || '', type: obj.type === 'suggestion' ? 'suggestion' : 'complaint', google_review_id: obj.googleReviewId || null, created_at: obj.createdAt, submitted_at: obj.submittedAt || null };
 }
 function toActivityRow(obj) {
   return { id: obj.id, business_id: obj.businessId, type: obj.type, customer_name: obj.customerName, phone: obj.phone, message: obj.message, status: obj.status, created_at: obj.createdAt };

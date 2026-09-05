@@ -3,6 +3,7 @@ import { api } from '../api.js';
 import { useAuth } from '../auth-context.jsx';
 import { Icon } from '../components/Icons.jsx';
 import { useToast } from '../components/useToast.jsx';
+import { getCopy } from '../utils/categoryCopy.js';
 
 function LineChart({ weeks }) {
   const W = 640, H = 220, pad = 28;
@@ -129,6 +130,8 @@ function Funnel({ funnel }) {
 }
 
 export default function Analytics() {
+  const { business } = useAuth();
+  const copy = getCopy(business?.category);
   const { show, node } = useToast();
   const [a, setA] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -186,7 +189,7 @@ export default function Analytics() {
 
       <div className="card" style={{ marginTop: 16 }}>
         <h3>Positive vs Negative</h3>
-        <div className="sub">Customers who tapped 👍 or 👎 after the message</div>
+        <div className="sub">{copy.personPluralTitle} who replied 😊 or 😞 after the message</div>
         <div className="flex" style={{ gap: 28, alignItems: 'center', marginTop: 12, flexWrap: 'wrap' }}>
           <SentimentDonut s={a.sentiment} />
           <div className="flex col" style={{ gap: 10 }}>
@@ -198,7 +201,7 @@ export default function Analytics() {
             <Icon.shield width={28} height={28} />
             <div>
               <b>{a.sentiment.keptOffGoogleThisMonth}</b> negative experience{a.sentiment.keptOffGoogleThisMonth === 1 ? '' : 's'} kept off Google this month.
-              <div className="muted" style={{ fontSize: 12 }}>Negative replies get a private feedback link instead of the public review prompt.</div>
+              <div className="muted" style={{ fontSize: 12 }}>Unhappy replies stay private — we never send a Google link on that branch.</div>
             </div>
           </div>
         </div>
@@ -212,8 +215,8 @@ export default function Analytics() {
           <PositiveRateLine weeks={a.sentiment.weeks} />
         </div>
         <div className="card">
-          <h3>Recent private feedback</h3>
-          <div className="sub">Negative replies — owner-only, never public</div>
+          <h3>{copy.complaintsTitle}</h3>
+          <div className="sub">{copy.complaintsSub}</div>
           <div className="spacer" />
           {a.sentiment.recentFeedback.length === 0 ? (
             <div className="empty">No negative feedback yet. 🎉</div>
@@ -296,7 +299,7 @@ export default function Analytics() {
               } catch (err) { show(err.message); }
             }}>
               <div className="field">
-                <label>Customer name (optional)</label>
+                <label>{copy.personTitle} name (optional)</label>
                 <input className="input" name="customerName" placeholder="Leave blank for anonymous" />
               </div>
               <div className="field">

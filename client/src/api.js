@@ -48,6 +48,8 @@ export const api = {
   logout: () => request('POST', '/logout'),
   onboardingStatus: () => request('GET', '/onboarding/status'),
   onboardingWhatsapp: (apiKey, phoneNumberId, extra = {}) => request('POST', '/onboarding/whatsapp', { apiKey, phoneNumberId, ...extra }),
+  onboardingProfile: (payload) => request('POST', '/onboarding/profile', payload),
+  inboundCustomer: (id, text) => request('POST', `/customers/${id}/inbound`, { text }),
   googleLocations: () => request('GET', '/onboarding/google/locations'),
   selectGoogleLocation: (payload) => request('POST', '/onboarding/google/location', payload),
   onboardingComplete: () => request('POST', '/onboarding/complete'),

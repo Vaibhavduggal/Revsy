@@ -3,6 +3,7 @@ import fs from 'fs';
 import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 import { createClient } from '@supabase/supabase-js';
+import { defaultTemplateFor, getCopy } from './categoryCopy.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -36,6 +37,7 @@ export async function initDb() {
   supabase = createClient(url, key);
   await ensurePlatformAdmin();
   await ensureDemoBusiness();
+  await ensureBurnGym();
   return supabase;
 }
 
@@ -47,6 +49,8 @@ async function ensureDemoBusiness() {
       approval_status: 'approved',
       google_connected: true,
       demo_mode: true,
+      category: 'restaurant',
+      category_set: true,
     };
     if (data?.[0]) {
       const { error } = await supabase.from('businesses').update(patch).eq('id', data[0].id);
@@ -64,7 +68,7 @@ async function ensureDemoBusiness() {
       address: 'SCF 29 F, Bhai Randhir Singh Nagar, Ludhiana, Punjab 141012',
       phone: '098143 05932',
       description: 'Smash burger restaurant demo used for live client walkthroughs.',
-      message_template: DEFAULT_TEMPLATE,
+      message_template: defaultTemplateFor('restaurant'),
       delay_seconds: 1800,
       demo_mode: true,
       subscription_status: 'active',
@@ -79,6 +83,8 @@ async function ensureDemoBusiness() {
       onboarding_completed: true,
       approval_status: 'approved',
       pre_approved: true,
+      category: 'restaurant',
+      category_set: true,
     });
     if (error) console.error('[revsy] ensureDemo insert:', error.message);
   } catch (e) {
@@ -103,6 +109,180 @@ async function ensurePlatformAdmin() {
     password_hash: hashPassword(password),
     created_at: new Date().toISOString(),
   });
+}
+
+async function ensureBurnGym() {
+  try {
+    const { data: existing } = await supabase.from('businesses').select('id').eq('owner_email', 'owner@burngym.com').maybeSingle();
+    const now = new Date().toISOString();
+    const gym = {
+      name: 'Burn Gym, Ghumar Mandi',
+      owner_email: 'owner@burngym.com',
+      is_demo: false,
+      google_review_link: 'https://search.google.com/local/writereview?placeid=ChIJBurnGymGhumarMandi',
+      feedback_link: '',
+      address: 'Plot No. B-19/186, 3rd-4th Floor, Rani Jhansi Road, Ghumar Mandi, Ludhiana, Punjab 141001',
+      phone: '+91 99887 77999',
+      description: 'Burn Gym, Ghumar Mandi — strength, PT, and group training in Ludhiana.',
+      message_template: defaultTemplateFor('gym'),
+      delay_seconds: 1800,
+      demo_mode: true,
+      subscription_status: 'active',
+      place_id: '',
+      google_connected: true,
+      onboarding_completed: true,
+      approval_status: 'approved',
+      pre_approved: true,
+      category: 'gym',
+      category_set: true,
+      whatsapp_status: 'not_connected',
+    };
+    let businessId = existing?.id;
+    if (!businessId) {
+      businessId = 'biz_burn_gym';
+      const { error } = await supabase.from('businesses').insert({
+        id: businessId,
+        password: hashPassword('demo123'),
+        created_at: now,
+        reviews_received: 0,
+        whatsapp_bsp: '',
+        whatsapp_api_key: '',
+        whatsapp_phone_number_id: '',
+        ...gym,
+      });
+      if (error) {
+        console.error('[revsy] ensureBurnGym insert:', error.message);
+        return;
+      }
+    } else {
+      await supabase.from('businesses').update(gym).eq('id', businessId);
+    }
+
+    const { data: onboard } = await supabase.from('businesses').select('id').eq('owner_email', 'setup@burngym.com').maybeSingle();
+    if (!onboard) {
+      await supabase.from('businesses').insert({
+        id: 'biz_burn_onboard',
+        name: 'Burn Gym, Ghumar Mandi',
+        owner_email: 'setup@burngym.com',
+        password: hashPassword('demo123'),
+        is_demo: false,
+        google_review_link: '',
+        feedback_link: '',
+        address: '',
+        phone: '',
+        description: '',
+        message_template: defaultTemplateFor('restaurant'),
+        delay_seconds: 1800,
+        demo_mode: false,
+        subscription_status: 'trial',
+        created_at: now,
+        place_id: '',
+        whatsapp_bsp: '',
+        whatsapp_api_key: '',
+        whatsapp_phone_number_id: '',
+        whatsapp_status: 'not_connected',
+        reviews_received: 0,
+        google_connected: false,
+        onboarding_completed: false,
+        approval_status: 'pending_approval',
+        pre_approved: true,
+        category: 'restaurant',
+        category_set: false,
+      });
+    }
+
+    await seedBurnGymReviews(businessId);
+  } catch (e) {
+    console.error('[revsy] ensureBurnGym:', e.message);
+  }
+}
+
+async function seedBurnGymReviews(businessId) {
+  const { count } = await supabase.from('reviews').select('*', { count: 'exact', head: true }).eq('business_id', businessId);
+  if ((count || 0) > 0) return;
+
+  const DAY = 86400000;
+  const now = Date.now();
+  const negatives = [
+    { name: 'Manpreet Singh', rating: 2, text: 'Machines at this branch feel dated compared to Burn Gym Model Town. Treadmills squeak and the floor looks worn. Ambience is not up to the other locations.' },
+    { name: 'Simran Kaur', rating: 1, text: 'The 30-day challenge keeps getting postponed. Third time my PT slot was moved with almost no notice. Scheduling is inconsistent.' },
+    { name: 'Gurpreet Dhillon', rating: 2, text: 'Front desk rarely replies on WhatsApp. I waited 20 minutes for someone to acknowledge me after my session. Staff responsiveness is poor.' },
+    { name: 'Navjot Brar', rating: 2, text: 'Equipment is old and two cable machines were out of order. Other Burn Gym branches feel newer. Please refresh this location.' },
+    { name: 'Jasleen Gill', rating: 1, text: 'Booked a trainer for the 30-day challenge kickoff and it was postponed again. PT calendar does not match what they promised at signup.' },
+    { name: 'Harmanpreet Joshi', rating: 2, text: 'Asked three times about a locker issue. Staff smiled and walked away. Need someone at the desk who actually follows up.' },
+  ];
+  const positives = [
+    { name: 'Anmol Sharma', rating: 5, text: 'Trainer Rahul actually cares about form. I have lost 6kg in two months and the energy in the evening batch is great.' },
+    { name: 'Pooja Verma', rating: 5, text: 'Helpful trainers and I can already see results. The community here keeps me showing up.' },
+    { name: 'Karan Mehta', rating: 4, text: 'Solid workouts and the PT who is present is excellent. Hoping they fix the older machines soon but I still recommend the coaches.' },
+    { name: 'Ishita Nanda', rating: 5, text: 'Good results after 8 weeks. Trainers explain every movement. This branch can be great once equipment is updated.' },
+  ];
+
+  const reviews = [...negatives, ...positives].map((r, i) => ({
+    id: `rev_burn_${i + 1}`,
+    business_id: businessId,
+    customer_id: null,
+    customer_name: r.name,
+    rating: r.rating,
+    text: r.text,
+    source: 'google',
+    google_review_id: `g_burn_${i + 1}`,
+    created_at: new Date(now - (20 - i) * DAY).toISOString(),
+    is_read: false,
+  }));
+  const { error } = await supabase.from('reviews').insert(reviews);
+  if (error) {
+    console.error('[revsy] seedBurnGymReviews:', error.message);
+    return;
+  }
+  await supabase.from('businesses').update({ reviews_received: reviews.length }).eq('id', businessId);
+
+  const issues = [
+    {
+      id: 'iss_burn_equipment',
+      theme: 'Dated equipment and ambience vs other branches',
+      improvement: 'Refresh high-use machines and deep-clean the floor so Ghumar Mandi matches newer Burn Gym locations.',
+      first_seen: new Date(now - 18 * DAY).toISOString(),
+      occurrences: 3,
+      example_review_ids: ['rev_burn_1', 'rev_burn_4'],
+      is_read: false,
+    },
+    {
+      id: 'iss_burn_pt',
+      theme: 'Inconsistent trainer / 30-day challenge scheduling',
+      improvement: 'Lock the 30-day challenge calendar and message members 24h before any PT change.',
+      first_seen: new Date(now - 14 * DAY).toISOString(),
+      occurrences: 2,
+      example_review_ids: ['rev_burn_2', 'rev_burn_5'],
+      is_read: false,
+    },
+    {
+      id: 'iss_burn_staff',
+      theme: 'Slow staff responsiveness',
+      improvement: 'Put a dedicated floor manager on WhatsApp and a 5-minute front-desk SLA.',
+      first_seen: new Date(now - 10 * DAY).toISOString(),
+      occurrences: 2,
+      example_review_ids: ['rev_burn_3', 'rev_burn_6'],
+      is_read: false,
+    },
+  ];
+  await supabase.from('review_summaries').insert({
+    id: 'sum_burn_gym',
+    business_id: businessId,
+    period_start: new Date(now - 365 * DAY).toISOString(),
+    period_end: new Date().toISOString(),
+    summary_text: issues.map((i) => `${i.theme}: ${i.improvement}`).join('\n'),
+    areas_of_improvement: issues.map((i) => i.improvement).join('\n'),
+    review_count: negatives.length,
+    is_read: false,
+    created_at: new Date().toISOString(),
+    issues,
+  });
+  for (const iss of issues) {
+    for (const rid of iss.example_review_ids) {
+      await supabase.from('reviews').update({ ai_flag: 'repeated', ai_issue_id: iss.id }).eq('id', rid);
+    }
+  }
 }
 
 export function getDb() {
@@ -159,6 +339,8 @@ function mapBusiness(row) {
     preApproved: !!row.pre_approved,
     approvedAt: row.approved_at || null,
     rejectedAt: row.rejected_at || null,
+    category: row.category === 'gym' ? 'gym' : 'restaurant',
+    categorySet: !!row.category_set,
   };
 }
 
@@ -175,6 +357,8 @@ function mapCustomer(row) {
     createdAt: row.created_at,
     lastRequestAt: row.last_request_at,
     lastRequestStatus: row.last_request_status,
+    waStep: row.wa_step || 'idle',
+    waHistory: Array.isArray(row.wa_history) ? row.wa_history : [],
   };
 }
 
@@ -238,6 +422,7 @@ function mapFeedback(row) {
     customerName: row.customer_name,
     phone: row.phone,
     complaint: row.complaint || '',
+    type: row.type === 'suggestion' ? 'suggestion' : 'complaint',
     googleReviewId: row.google_review_id || null,
     createdAt: row.created_at,
     submittedAt: row.submitted_at || null,
@@ -314,6 +499,8 @@ function toBusinessRow(obj) {
     pre_approved: !!obj.preApproved,
     approved_at: obj.approvedAt || null,
     rejected_at: obj.rejectedAt || null,
+    category: obj.category === 'gym' ? 'gym' : 'restaurant',
+    category_set: !!obj.categorySet,
     is_demo: obj.isDemo,
     google_review_link: obj.googleReviewLink,
     feedback_link: obj.feedbackLink,
@@ -348,6 +535,8 @@ function toCustomerRow(obj) {
     created_at: obj.createdAt,
     last_request_at: obj.lastRequestAt,
     last_request_status: obj.lastRequestStatus,
+    wa_step: obj.waStep || 'idle',
+    wa_history: Array.isArray(obj.waHistory) ? obj.waHistory : [],
   };
 }
 
@@ -411,6 +600,7 @@ function toFeedbackRow(obj) {
     customer_name: obj.customerName,
     phone: obj.phone,
     complaint: obj.complaint || '',
+    type: obj.type === 'suggestion' ? 'suggestion' : 'complaint',
     google_review_id: obj.googleReviewId || null,
     created_at: obj.createdAt,
     submitted_at: obj.submittedAt || null,
@@ -446,8 +636,7 @@ function toActivityRow(obj) {
   };
 }
 
-export const DEFAULT_TEMPLATE =
-  'Hi [customer name], thank you for visiting [business name]! We\'d love to hear about your experience. It only takes 30 seconds: [google review link]';
+export const DEFAULT_TEMPLATE = defaultTemplateFor('restaurant');
 
 export function renderTemplate(template, { customerName, businessName, reviewLink }) {
   return String(template)

@@ -18,7 +18,7 @@ const BSP_OPTIONS = ['RichAutomate', 'AiSensy', 'Gupshup', 'Interakt', 'Wati', '
 
 function AddClientModal({ onClose, onAdded }) {
   const { show, node } = useToast();
-  const [form, setForm] = useState({ name: '', ownerEmail: '', password: '', googleReviewLink: '' });
+  const [form, setForm] = useState({ name: '', ownerEmail: '', password: '', googleReviewLink: '', category: 'restaurant' });
   const [busy, setBusy] = useState(false);
   const update = (k, v) => setForm((f) => ({ ...f, [k]: v }));
 
@@ -37,7 +37,14 @@ function AddClientModal({ onClose, onAdded }) {
   return (
     <Modal title="Add client" sub="Creates their login. Share the email + password with them so they can sign in." onClose={onClose}>
       <form onSubmit={submit}>
-        <div className="field"><label>Business name</label><input className="input" value={form.name} onChange={(e) => update('name', e.target.value)} placeholder="e.g. Punjabi Tadka" autoFocus /></div>
+        <div className="field"><label>Business name</label><input className="input" value={form.name} onChange={(e) => update('name', e.target.value)} placeholder="e.g. Burn Gym, Ghumar Mandi" autoFocus /></div>
+        <div className="field">
+          <label>Category</label>
+          <select className="select" value={form.category} onChange={(e) => update('category', e.target.value)}>
+            <option value="restaurant">Restaurant</option>
+            <option value="gym">Gym</option>
+          </select>
+        </div>
         <div className="field"><label>Owner email (their login)</label><input className="input" type="email" value={form.ownerEmail} onChange={(e) => update('ownerEmail', e.target.value)} placeholder="owner@theirbusiness.com" /></div>
         <div className="field"><label>Initial password</label><input className="input" value={form.password} onChange={(e) => update('password', e.target.value)} placeholder="Set a temporary password" /></div>
         <div className="field"><label>Google review link (optional, can add later)</label><input className="input" value={form.googleReviewLink} onChange={(e) => update('googleReviewLink', e.target.value)} placeholder="https://g.page/.../review" /></div>
@@ -248,12 +255,13 @@ export default function Admin() {
             ) : (
               <table className="table">
                 <thead>
-                  <tr><th>Business</th><th>Owner email</th><th>Status</th><th>WhatsApp</th><th>Google</th><th>Reviews</th><th>Requests</th><th>Customers</th><th>Created</th><th></th></tr>
+                  <tr><th>Business</th><th>Category</th><th>Owner email</th><th>Status</th><th>WhatsApp</th><th>Google</th><th>Reviews</th><th>Requests</th><th>People</th><th>Created</th><th></th></tr>
                 </thead>
                 <tbody>
                   {list.map((b) => (
                     <tr key={b.id}>
                       <td><b>{b.name}</b>{b.isDemo && <span className="badge sent sm" style={{ marginLeft: 6 }}>Demo</span>}</td>
+                      <td className="muted">{b.category === 'gym' ? 'Gym' : 'Restaurant'}</td>
                       <td className="muted">{b.ownerEmail}</td>
                       <td><span className={`badge ${STATUS[b.subscriptionStatus]?.cls || 'sent'}`}>{STATUS[b.subscriptionStatus]?.label || b.subscriptionStatus || 'Trial'}</span></td>
                       <td>
