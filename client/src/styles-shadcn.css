@@ -2,6 +2,7 @@
 @import "tailwindcss/utilities" layer(utilities);
 
 @theme inline {
+  --font-serif: Georgia, 'Times New Roman', serif;
   --color-background: #ffffff;
   --color-foreground: #1f2430;
   --color-card: #ffffff;
@@ -39,6 +40,11 @@
 }
 
 :root {
+  --primary: #e63946;
+  --primary-foreground: #ffffff;
+  --secondary: #f7f8fa;
+  --secondary-foreground: #1f2430;
+  --ring: #e63946;
   --destructive-foreground: #ffffff;
   --color-destructive-foreground: #ffffff;
 }

@@ -5,15 +5,16 @@ import { useAuth } from '../auth-context.jsx';
 import { Icon } from '../components/Icons.jsx';
 import { useToast } from '../components/useToast.jsx';
 import { getCopy } from '../utils/categoryCopy.js';
-import ReviewTrendChart from '../components/dashboard/ReviewTrendChart.jsx';
+import Hero02 from '../components/ui/hero-02.jsx';
+import { Button } from '../components/ui/button-shadcn';
 
 function StatusBadge({ status }) {
   const map = { Sent: 'sent', Opened: 'opened', Reviewed: 'reviewed', Scheduled: 'scheduled' };
   return <span className={`badge ${map[status] || 'sent'}`}>{status}</span>;
 }
 
-function QuickAdd({ onAdded, copy }) {
-  const [open, setOpen] = useState(false);
+function QuickAdd({ onAdded, copy, initialOpen = false, onClose }) {
+  const [open, setOpen] = useState(initialOpen);
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [busy, setBusy] = useState(false);
@@ -29,6 +30,7 @@ function QuickAdd({ onAdded, copy }) {
       setName('');
       setPhone('');
       setOpen(false);
+      onClose?.();
       onAdded();
     } catch (err) {
       show(err.message);
@@ -52,7 +54,7 @@ function QuickAdd({ onAdded, copy }) {
         <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder={`${copy.personTitle} name`} autoFocus />
         <input className="input" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Phone (+91…)" />
         <div className="flex" style={{ gap: 8 }}>
-          <button type="button" className="btn secondary" onClick={() => setOpen(false)}>Cancel</button>
+          <button type="button" className="btn secondary" onClick={() => { setOpen(false); onClose?.(); }}>Cancel</button>
           <button type="submit" className="btn" disabled={busy}>{busy ? 'Adding…' : 'Add & schedule'}</button>
         </div>
       </form>
@@ -103,6 +105,22 @@ function ReviewCard({ r, negative, onRead }) {
   );
 }
 
+function Panel({ title, subtitle, badge, borderColor, children, testId }) {
+  return (
+    <div className="card" style={borderColor ? { borderTop: `3px solid ${borderColor}` } : undefined} data-testid={testId}>
+      <div className="flex between">
+        <div>
+          <h3 style={borderColor ? { color: borderColor } : undefined}>{title}</h3>
+          {subtitle && <div className="sub">{subtitle}</div>}
+        </div>
+        {badge}
+      </div>
+      <div className="spacer" />
+      {children}
+    </div>
+  );
+}
+
 export default function Dashboard() {
   const { business } = useAuth();
   const { show, node } = useToast();
@@ -114,6 +132,7 @@ export default function Dashboard() {
   const [reviewList, setReviewList] = useState({ positive: [], negative: [], suggestions: [], complaints: [] });
   const [summaries, setSummaries] = useState(null);
   const [syncing, setSyncing] = useState(false);
+  const [quickAddOpen, setQuickAddOpen] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -188,7 +207,7 @@ export default function Dashboard() {
 
   const copy = getCopy(business?.category);
   const { stats, recent } = data;
-  const chartWeeks = analytics?.weeks || data.weekly;
+  const chartWeeks = analytics?.weeks || [];
   const issues = summaries?.issues || [];
   const unreadPos = reviewList.positive.filter((r) => r.isRead === false).length;
   const unreadNeg = reviewList.negative.filter((r) => r.isRead === false).length;
@@ -196,60 +215,70 @@ export default function Dashboard() {
   const complaints = reviewList.complaints || [];
 
   return (
-    <div className="page">
-      <div className="page-head">
-        <div>
-          <h1>Dashboard</h1>
-          <div className="sub">{business?.name} · {copy.dashboardSub}</div>
-        </div>
-        <div className="flex" style={{ gap: 8, flexWrap: 'wrap' }}>
-          <Link className="btn secondary sm" to="/customers">{copy.personPluralTitle}</Link>
-          <Link className="btn secondary sm" to="/reviews">All reviews</Link>
-          <button className="btn ghost sm" onClick={syncGoogle} disabled={syncing}>
-            <Icon.star width={13} height={13} /> {syncing ? 'Syncing…' : 'Sync Google'}
-          </button>
-        </div>
-      </div>
+    <div className="page dashboard-page">
+      <Hero02
+        variant="compact"
+        animation="subtle"
+        title="Every review metric that matters,"
+        titleLine2="in one clear view."
+        description={`${business?.name} · ${copy.dashboardSub}. Track requests, reactions, and recurring issues without spreadsheets.`}
+        washImage="https://images.unsplash.com/photo-1551288049-bebda4e38f71?auto=format&fit=crop&w=1600&q=80"
+        primaryCTA={{
+          ctaEnabled: true,
+          text: copy.addPerson,
+          onClick: () => setQuickAddOpen(true),
+          variant: 'default',
+          size: 'default',
+        }}
+        secondaryCTA={{
+          ctaEnabled: true,
+          text: syncing ? 'Syncing…' : 'Sync Google',
+          onClick: syncGoogle,
+          variant: 'outline',
+          size: 'default',
+        }}
+        actions={(
+          <>
+            <Button variant="ghost" size="sm" asChild>
+              <Link to="/customers">{copy.personPluralTitle}</Link>
+            </Button>
+            <Button variant="ghost" size="sm" asChild>
+              <Link to="/analytics">Full analytics</Link>
+            </Button>
+          </>
+        )}
+        dashboardProps={{
+          stats,
+          weeks: chartWeeks,
+          unreadReviews: unreadPos + unreadNeg,
+          onRefresh: load,
+          businessName: business?.name,
+        }}
+      />
 
-      <div className="stat-grid" style={{ marginBottom: 16 }}>
-        <div className="stat accent">
-          <div className="icon"><Icon.send width={20} height={20} /></div>
-          <div className="label">Requests sent</div>
-          <div className="value">{stats.totalSent}</div>
+      {quickAddOpen && (
+        <div className="card" style={{ marginTop: 16 }}>
+          <QuickAdd
+            copy={copy}
+            initialOpen
+            onClose={() => setQuickAddOpen(false)}
+            onAdded={load}
+          />
         </div>
-        <div className="stat">
-          <div className="icon"><Icon.star width={20} height={20} /></div>
-          <div className="label">Reviews received</div>
-          <div className="value">{stats.totalReceived}</div>
-        </div>
-        <div className="stat">
-          <div className="icon"><Icon.rocket width={20} height={20} /></div>
-          <div className="label">Conversion</div>
-          <div className="value">{stats.conversionRate}%</div>
-        </div>
-        <div className="stat">
-          <div className="icon"><Icon.users width={20} height={20} /></div>
-          <div className="label">Unread reviews</div>
-          <div className="value">{unreadPos + unreadNeg}</div>
-        </div>
-      </div>
+      )}
 
-      <div className="row even" style={{ marginBottom: 16, alignItems: 'start' }}>
-        <div className="card">
-          <QuickAdd onAdded={load} copy={copy} />
-        </div>
-        <div className="card" style={{ borderLeft: '4px solid var(--accent)' }}>
-          <div className="flex between">
-            <h3>AI insights</h3>
-            <span className="badge sent sm">{issues.length} issues</span>
-          </div>
-          <div className="sub">Recurring problems from negative Google reviews</div>
-          <div className="spacer" />
+      <div className="row even" style={{ marginTop: 16, alignItems: 'start' }}>
+        <Panel
+          title="AI insights"
+          subtitle="Recurring problems from negative Google reviews"
+          badge={<span className="badge sent sm">{issues.length} issues</span>}
+          borderColor="var(--accent)"
+        >
           {issues.length === 0 ? (
             <div className="empty">No issues yet — they appear after negative reviews are analyzed.</div>
           ) : (
-            <div className="flex col" style={{ gap: 8, maxHeight: 220, overflowY: 'auto' }}>
-              {issues.slice(0, 4).map((iss) => (
+            <div className="flex col" style={{ gap: 8, maxHeight: 260, overflowY: 'auto' }}>
+              {issues.slice(0, 5).map((iss) => (
                 <div key={iss.id} style={{ border: '1px solid var(--line)', borderRadius: 10, padding: 10, background: iss.is_read ? '#fff' : 'var(--accent-soft)' }}>
                   <div className="flex between">
                     <b style={{ fontSize: 13 }}>{iss.theme} · {iss.occurrences || 1}×</b>
@@ -260,56 +289,75 @@ export default function Dashboard() {
               ))}
             </div>
           )}
-        </div>
+        </Panel>
+
+        <Panel
+          title="Recent review requests"
+          subtitle="Latest WhatsApp review asks"
+        >
+          {recent.length === 0 ? (
+            <div className="empty">No requests yet — add a {copy.person} to get started.</div>
+          ) : (
+            <table className="table">
+              <thead>
+                <tr><th>{copy.personTitle}</th><th>Status</th><th>When</th></tr>
+              </thead>
+              <tbody>
+                {recent.slice(0, 6).map((r) => (
+                  <tr key={r.id}>
+                    <td><b>{r.customerName}</b><div className="muted">{r.phone}</div></td>
+                    <td><StatusBadge status={r.status} /></td>
+                    <td className="muted">{timeAgo(r.createdAt)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </Panel>
       </div>
 
-      <div style={{ marginBottom: 16 }}>
-        <ReviewTrendChart weeks={chartWeeks} onRefresh={load} />
-      </div>
-
-      <div className="row even" style={{ marginBottom: 16 }}>
-        <div className="card" style={{ borderTop: '3px solid var(--ok)' }}>
-          <div className="flex between">
-            <h3 style={{ color: 'var(--ok)' }}>Positive reviews</h3>
-            {unreadPos > 0 && <span className="badge reviewed sm">{unreadPos} unread</span>}
-          </div>
-          <div className="spacer" />
+      <div className="row even" style={{ marginTop: 16 }}>
+        <Panel
+          title="Positive reviews"
+          badge={unreadPos > 0 ? <span className="badge reviewed sm">{unreadPos} unread</span> : null}
+          borderColor="var(--ok)"
+        >
           {reviewList.positive.length === 0 ? (
             <div className="empty">No positive reviews yet.</div>
           ) : (
-            <div className="flex col" style={{ gap: 10, maxHeight: 300, overflowY: 'auto' }}>
+            <div className="flex col" style={{ gap: 10, maxHeight: 320, overflowY: 'auto' }}>
               {reviewList.positive.slice(0, 6).map((r) => (
                 <ReviewCard key={r.id} r={r} negative={false} onRead={markRead} />
               ))}
             </div>
           )}
-        </div>
-        <div className="card" style={{ borderTop: '3px solid var(--warn)' }}>
-          <div className="flex between">
-            <h3 style={{ color: 'var(--warn)' }}>Negative reviews</h3>
-            {unreadNeg > 0 && <span className="badge opened sm">{unreadNeg} unread</span>}
-          </div>
-          <div className="spacer" />
+        </Panel>
+
+        <Panel
+          title="Negative reviews"
+          badge={unreadNeg > 0 ? <span className="badge opened sm">{unreadNeg} unread</span> : null}
+          borderColor="var(--warn)"
+        >
           {reviewList.negative.length === 0 ? (
             <div className="empty">No negative feedback yet.</div>
           ) : (
-            <div className="flex col" style={{ gap: 10, maxHeight: 300, overflowY: 'auto' }}>
+            <div className="flex col" style={{ gap: 10, maxHeight: 320, overflowY: 'auto' }}>
               {reviewList.negative.slice(0, 6).map((r) => (
                 <ReviewCard key={r.id} r={r} negative onRead={markRead} />
               ))}
             </div>
           )}
-        </div>
+        </Panel>
       </div>
 
-      <div className="row even" style={{ marginBottom: 16 }}>
-        <div className="card" style={{ borderTop: '3px solid var(--accent)' }} data-testid="suggestions-section">
-          <div className="flex between">
-            <h3>{copy.suggestionsTitle}</h3>
-            <span className="badge sent sm">{suggestions.length}</span>
-          </div>
-          <div className="sub">{copy.suggestionsSub}</div>
-          <div className="spacer" />
+      <div className="row even" style={{ marginTop: 16 }}>
+        <Panel
+          title={copy.suggestionsTitle}
+          subtitle={copy.suggestionsSub}
+          badge={<span className="badge sent sm">{suggestions.length}</span>}
+          borderColor="var(--accent)"
+          testId="suggestions-section"
+        >
           {suggestions.length === 0 ? (
             <div className="empty">No suggestions yet — they appear when a happy {copy.person} replies with an idea.</div>
           ) : (
@@ -323,14 +371,15 @@ export default function Dashboard() {
               ))}
             </div>
           )}
-        </div>
-        <div className="card" style={{ borderTop: '3px solid var(--warn)' }} data-testid="complaints-section">
-          <div className="flex between">
-            <h3 style={{ color: 'var(--warn)' }}>{copy.complaintsTitle}</h3>
-            <span className="badge opened sm">{complaints.length}</span>
-          </div>
-          <div className="sub">{copy.complaintsSub}</div>
-          <div className="spacer" />
+        </Panel>
+
+        <Panel
+          title={copy.complaintsTitle}
+          subtitle={copy.complaintsSub}
+          badge={<span className="badge opened sm">{complaints.length}</span>}
+          borderColor="var(--warn)"
+          testId="complaints-section"
+        >
           {complaints.length === 0 ? (
             <div className="empty">No private complaints yet.</div>
           ) : (
@@ -344,32 +393,7 @@ export default function Dashboard() {
               ))}
             </div>
           )}
-        </div>
-      </div>
-
-      <div className="card">
-        <h3>Recent review requests</h3>
-        <div className="sub">Latest WhatsApp review asks</div>
-        <div className="spacer" />
-        {recent.length === 0 ? (
-          <div className="empty">No requests yet — add a {copy.person} to get started.</div>
-        ) : (
-          <table className="table">
-            <thead>
-              <tr><th>{copy.personTitle}</th><th>Phone</th><th>Status</th><th>When</th></tr>
-            </thead>
-            <tbody>
-              {recent.map((r) => (
-                <tr key={r.id}>
-                  <td><b>{r.customerName}</b></td>
-                  <td className="muted">{r.phone}</td>
-                  <td><StatusBadge status={r.status} /></td>
-                  <td className="muted">{timeAgo(r.createdAt)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
+        </Panel>
       </div>
 
       {failed.length > 0 && (
