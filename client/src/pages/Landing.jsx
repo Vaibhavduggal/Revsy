@@ -1,42 +1,33 @@
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Logo } from '../components/Icons.jsx';
 import ReviewMotif from '../components/marketing/ReviewMotif.jsx';
-import RupeeCoin from '../components/marketing/RupeeCoin.jsx';
-import GeoAccent from '../components/marketing/GeoAccent.jsx';
+import AnimatedHeadline from '../components/marketing/AnimatedHeadline.jsx';
+import LoopBeat from '../components/marketing/LoopBeat.jsx';
+import DrawGeoAccent from '../components/marketing/DrawGeoAccent.jsx';
 import '../styles-marketing.css';
 
-const FEATURES = [
+const LOOP_BEATS = [
   {
-    icon: '⚡',
-    title: 'Automated WhatsApp review requests',
-    body: 'Add a customer name and phone after each visit. Revsy queues a personalized review ask on your schedule.',
-    stat: '30 min',
-    statLabel: 'default delay before send',
-    href: '#features',
+    id: 'ask',
+    step: '1',
+    title: 'Ask.',
+    body: 'The moment someone walks out happy, Revsy\u2019s already messaged them.',
+    substat: 'Sent within minutes, every time',
   },
   {
-    icon: '◐',
-    title: 'Positive & negative sentiment gating',
-    body: 'Happy guests get your Google review link. Unhappy ones are invited to share feedback privately first.',
-    stat: 'Private',
-    statLabel: 'negative feedback path',
-    href: '#features',
+    id: 'sort',
+    step: '2',
+    title: 'Sort.',
+    body: 'Happy customers go straight to Google. Unhappy ones come straight to you \u2014 quietly.',
+    substat: 'Private feedback never reaches Google',
   },
   {
-    icon: '◎',
-    title: 'AI issue detection',
-    body: 'Complaints and suggestions from Google and WhatsApp are clustered into themes the owner can act on.',
-    stat: 'Auto',
-    statLabel: 'recurring issue clustering',
-    href: '#features',
-  },
-  {
-    icon: '↻',
-    title: 'Real-time Google review sync',
-    body: 'Connect Google Business Profile once. New reviews appear in your dashboard as they arrive.',
-    stat: '12 mo',
-    statLabel: 'of review history synced',
-    href: '#features',
+    id: 'learn',
+    step: '3',
+    title: 'Learn.',
+    body: 'Every complaint, every suggestion, clustered by AI into exactly what to fix next.',
+    substat: 'Patterns spotted, not just noise',
   },
 ];
 
@@ -44,86 +35,93 @@ const INDUSTRIES = [
   {
     id: 'restaurants',
     title: 'For Restaurants',
-    body: 'Turn every table into a review opportunity — without awkward asks at the door.',
-    cta: 'See restaurant workflow',
+    body: 'Turn every satisfied table into a five-star review \u2014 and catch a bad night before it becomes a bad rating.',
   },
   {
     id: 'gyms',
     title: 'For Gyms',
-    body: 'Follow up after class check-ins and memberships with a timely, personal WhatsApp nudge.',
-    cta: 'See gym workflow',
+    body: 'Every renewal is a happy member. Every happy member is a review waiting to happen.',
   },
 ];
 
 export default function Landing() {
   const navigate = useNavigate();
+  const heroRef = useRef(null);
+  const [navScrolled, setNavScrolled] = useState(false);
+
+  useEffect(() => {
+    const hero = heroRef.current;
+    if (!hero) return;
+
+    const onScroll = () => {
+      const heroBottom = hero.getBoundingClientRect().bottom;
+      setNavScrolled(heroBottom <= 72);
+    };
+
+    onScroll();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
+
+  const scrollToLoop = () => {
+    document.getElementById('loop')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
 
   return (
     <div className="mkt">
-      <header className="mkt-nav">
+      <header className={`mkt-nav${navScrolled ? ' mkt-nav--scrolled' : ''}`}>
         <a className="mkt-brand" href="/" onClick={(e) => { e.preventDefault(); navigate('/'); }}>
           <Logo /><span>Revsy</span>
         </a>
         <nav className="mkt-nav-links" aria-label="Primary">
+          <a href="#loop">How it works</a>
           <a href="#restaurants">For Restaurants</a>
           <a href="#gyms">For Gyms</a>
           <button type="button" className="mkt-link-btn" onClick={() => navigate('/login')}>Sign in</button>
         </nav>
         <button type="button" className="mkt-btn mkt-btn-primary" onClick={() => navigate('/signup')}>
-          Get started
+          Get Started
         </button>
       </header>
 
-      <section className="mkt-hero">
+      <section className="mkt-hero" ref={heroRef}>
+        <div className="mkt-hero-mesh" aria-hidden="true" />
         <div className="mkt-container mkt-hero-inner">
           <div className="mkt-hero-copy">
-            <p className="editorial-kicker"><GeoAccent /> For restaurants &amp; gyms</p>
-            <h1>Get more Google reviews, automatically</h1>
+            <p className="editorial-kicker"><DrawGeoAccent /> For restaurants &amp; gyms</p>
+            <AnimatedHeadline text="Every review starts with a moment." />
             <p className="mkt-lead">
-              Revsy sends WhatsApp review requests after each visit, syncs your Google reviews,
-              and surfaces recurring complaints and suggestions — so you fix what matters.
+              Revsy catches it &mdash; automatically asking on WhatsApp, right after the moment
+              happens, so nothing gets forgotten and nothing gets lost.
             </p>
             <div className="mkt-hero-actions">
               <button type="button" className="mkt-btn mkt-btn-primary mkt-btn-lg" onClick={() => navigate('/signup')}>
-                Get started
+                Get Started
               </button>
-              <button type="button" className="mkt-btn mkt-btn-ghost" onClick={() => navigate('/demo')}>
-                View live demo
+              <button type="button" className="mkt-btn mkt-btn-ghost" onClick={scrollToLoop}>
+                See how it works
               </button>
             </div>
           </div>
           <div className="mkt-hero-motif" aria-hidden="true">
-            <RupeeCoin size={180} />
+            <ReviewMotif size={160} className="mkt-motif" />
           </div>
         </div>
       </section>
 
       <section className="mkt-trust">
         <div className="mkt-container mkt-trust-inner">
-          <p className="mkt-trust-label">Built for local businesses in Ludhiana and across India</p>
-          <div className="mkt-trust-stats">
-            <div><strong>WhatsApp</strong><span>review requests on your BSP</span></div>
-            <div><strong>Google</strong><span>Business Profile sync</span></div>
-            <div><strong>AI</strong><span>recurring issue insights</span></div>
-          </div>
+          <p className="mkt-trust-quote">Quietly running behind gyms and restaurants across Punjab.</p>
         </div>
       </section>
 
-      <section className="mkt-features" id="features">
+      <section className="mkt-loop" id="loop">
         <div className="mkt-container">
-          <h2 className="mkt-section-title"><GeoAccent /> Everything you need to grow reviews — and learn from them</h2>
-          <div className="mkt-feature-grid">
-            {FEATURES.map((f) => (
-              <article key={f.title} className="mkt-feature-card">
-                <div className="mkt-feature-icon">{f.icon}</div>
-                <h3>{f.title}</h3>
-                <p>{f.body}</p>
-                <div className="mkt-stat">
-                  <span className="mkt-stat-value">{f.stat}</span>
-                  <span className="mkt-stat-label">{f.statLabel}</span>
-                </div>
-                <a className="mkt-learn" href={f.href}>Learn more</a>
-              </article>
+          <h2 className="mkt-section-title"><DrawGeoAccent shape="circle" /> The Loop</h2>
+          <p className="mkt-loop-intro">Three beats. One quiet system working in the background.</p>
+          <div className="mkt-loop-track">
+            {LOOP_BEATS.map((beat, i) => (
+              <LoopBeat key={beat.id} index={i} {...beat} />
             ))}
           </div>
         </div>
@@ -131,68 +129,30 @@ export default function Landing() {
 
       <section className="mkt-industries">
         <div className="mkt-container">
-          <h2 className="mkt-section-title">Built for every kind of local business</h2>
+          <h2 className="mkt-section-title">Built for how you actually operate</h2>
           <div className="mkt-industry-grid">
             {INDUSTRIES.map((ind) => (
-              <article key={ind.id} id={ind.id} className="mkt-industry-card">
+              <article key={ind.id} id={ind.id} className="mkt-industry-card mkt-hover-card">
                 <ReviewMotif size={72} className="mkt-motif mkt-motif-sm" />
                 <h3>{ind.title}</h3>
                 <p>{ind.body}</p>
-                <a className="mkt-learn" href={`#${ind.id}`}>{ind.cta}</a>
               </article>
             ))}
           </div>
         </div>
       </section>
 
-      <section className="mkt-quote">
-        <div className="mkt-container mkt-quote-grid">
-          <blockquote>
-            <p>
-              “We finally see what guests love — and what keeps coming up in negative feedback —
-              without chasing every customer for a review.”
-            </p>
-            <footer>
-              <cite>Early Revsy pilot partner</cite>
-              <span>Local restaurant, Punjab</span>
-            </footer>
-          </blockquote>
-        </div>
-      </section>
-
       <section className="mkt-dark">
         <div className="mkt-container mkt-dark-inner">
-          <div className="mkt-dark-copy">
-            <p className="mkt-eyebrow"><GeoAccent shape="circle" /> For business owners</p>
-            <h2>Set up in minutes — no technical knowledge needed</h2>
-            <p>Connect your accounts once. Revsy handles the rest.</p>
-            <div style={{ marginTop: 20 }}>
-              <RupeeCoin size={72} />
-            </div>
-          </div>
-          <ol className="mkt-steps">
-            <li><span>1</span><div><strong>Sign up</strong><p>Create your business account in under a minute.</p></div></li>
-            <li><span>2</span><div><strong>Connect Google &amp; WhatsApp</strong><p>Link Business Profile and your messaging provider.</p></div></li>
-            <li><span>3</span><div><strong>Start collecting reviews</strong><p>Add customers and let Revsy queue review requests.</p></div></li>
-          </ol>
-          <button type="button" className="mkt-btn mkt-btn-light" onClick={() => navigate('/signup')}>
-            Create your account
+          <DrawGeoAccent shape="circle" size={20} className="mkt-dark-accent" />
+          <h2>You don&apos;t need another app to manage.</h2>
+          <p className="mkt-dark-lead">
+            Sign up, connect your Google listing and WhatsApp, and Revsy runs quietly in the
+            background from day one.
+          </p>
+          <button type="button" className="mkt-btn mkt-btn-light mkt-btn-lg" onClick={() => navigate('/signup')}>
+            Book a Demo
           </button>
-        </div>
-      </section>
-
-      <section className="mkt-cta-band">
-        <div className="mkt-container mkt-cta-band-inner">
-          <h2>More reviews. Fewer surprises.</h2>
-          <p>See how Revsy works with a live demo — or start your own account today.</p>
-          <div className="mkt-hero-actions">
-            <button type="button" className="mkt-btn mkt-btn-primary mkt-btn-lg" onClick={() => navigate('/demo')}>
-              Book a demo
-            </button>
-            <button type="button" className="mkt-btn mkt-btn-outline-dark" onClick={() => navigate('/signup')}>
-              Get started
-            </button>
-          </div>
         </div>
       </section>
 
@@ -200,11 +160,11 @@ export default function Landing() {
         <div className="mkt-container mkt-footer-grid">
           <div className="mkt-footer-brand">
             <div className="mkt-brand"><Logo /><span>Revsy</span></div>
-            <p>Review collection and analysis for local businesses.</p>
+            <p className="mkt-footer-tagline">Revsy &mdash; the quiet system behind loud reputations.</p>
           </div>
           <div>
             <h4>Product</h4>
-            <a href="#features">Features</a>
+            <a href="#loop">How it works</a>
             <a href="#restaurants">For Restaurants</a>
             <a href="#gyms">For Gyms</a>
             <button type="button" className="mkt-footer-link" onClick={() => navigate('/demo')}>Live demo</button>
@@ -221,7 +181,7 @@ export default function Landing() {
           </div>
         </div>
         <div className="mkt-container mkt-footer-bottom">
-          <span>© {new Date().getFullYear()} Revsy</span>
+          <span>&copy; {new Date().getFullYear()} Revsy</span>
         </div>
       </footer>
     </div>

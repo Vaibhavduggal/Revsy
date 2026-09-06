@@ -10,13 +10,32 @@ fs.mkdirSync(OUT, { recursive: true });
 
 const BASE = process.env.SITE_URL || 'http://localhost:4173';
 
-async function capture(page, url, name, viewport) {
+async function capture(page, name, viewport, { fullPage = true, waitMs = 0 } = {}) {
   await page.setViewportSize(viewport);
-  await page.goto(url, { waitUntil: 'networkidle', timeout: 60000 });
-  await page.waitForTimeout(2000);
+  if (waitMs) await page.waitForTimeout(waitMs);
   const file = path.join(OUT, name);
-  await page.screenshot({ path: file, fullPage: true });
+  await page.screenshot({ path: file, fullPage });
   console.log('saved', name, viewport);
+}
+
+async function verifyLoopReveals(page) {
+  const beats = ['ask', 'sort', 'learn'];
+  const results = {};
+
+  for (const id of beats) {
+    const el = page.locator(`[data-loop-beat="${id}"]`);
+    await el.scrollIntoViewIfNeeded();
+    await page.waitForTimeout(600);
+    const revealed = await el.getAttribute('data-revealed');
+    results[id] = revealed === 'true';
+    console.log(`loop beat ${id}: data-revealed=${revealed}`);
+  }
+
+  const allRevealed = beats.every((id) => results[id]);
+  if (!allRevealed) {
+    throw new Error(`Loop scroll reveals failed: ${JSON.stringify(results)}`);
+  }
+  console.log('loop scroll reveals: OK');
 }
 
 async function main() {
@@ -28,15 +47,36 @@ async function main() {
 
   {
     const page = await ctx.newPage();
-    await capture(page, `${BASE}/`, 'revsy-landing-desktop.png', desktop);
-    await capture(page, `${BASE}/`, 'revsy-landing-mobile.png', mobile);
+
+    // Desktop — hero mid-animation (~3 words in)
+    await page.setViewportSize(desktop);
+    await page.goto(`${BASE}/`, { waitUntil: 'domcontentloaded', timeout: 60000 });
+    await page.waitForTimeout(180);
+    await capture(page, 'revsy-hero-mid-animation-desktop.png', desktop, { fullPage: false, waitMs: 0 });
+
+    // Desktop — fully loaded
+    await page.waitForTimeout(2500);
+    await capture(page, 'revsy-landing-desktop.png', desktop);
+
+    // Scroll-triggered loop reveals
+    await verifyLoopReveals(page);
+
     await page.close();
   }
 
   {
     const page = await ctx.newPage();
-    await capture(page, 'https://spade.com/', 'spade-desktop.png', desktop);
-    await capture(page, 'https://spade.com/', 'spade-mobile.png', mobile);
+
+    await page.setViewportSize(mobile);
+    await page.goto(`${BASE}/`, { waitUntil: 'domcontentloaded', timeout: 60000 });
+    await page.waitForTimeout(180);
+    await capture(page, 'revsy-hero-mid-animation-mobile.png', mobile, { fullPage: false, waitMs: 0 });
+
+    await page.waitForTimeout(2500);
+    await capture(page, 'revsy-landing-mobile.png', mobile);
+
+    await verifyLoopReveals(page);
+
     await page.close();
   }
 

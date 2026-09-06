@@ -28,6 +28,19 @@ function newId(prefix) {
   return `${prefix}_${Date.now()}_${Math.floor(Math.random() * 1e6)}`;
 }
 
+/** After first Google review sync, cluster last-year complaints & suggestions for the owner. */
+function triggerInitialInsights(businessId) {
+  (async () => {
+    try {
+      const cur = await getCurrentSummaryRow(businessId);
+      if (cur && issuesFromRow(cur).length > 0) return;
+      await runFirstClusteringForBusiness(businessId);
+    } catch (e) {
+      console.error('initial AI insights failed (retry on cron):', e.message);
+    }
+  })();
+}
+
 export const MESSAGE_PRESETS = messagePresetsFor('restaurant');
 
 export function render(business, customer) {
@@ -386,6 +399,7 @@ async function applyGoogleBusinessTokens(businessId, tokenData) {
       const bizForSync = await getBusiness(businessId);
       if (bizForSync?.googleLocationName) {
         await syncGoogleReviewsForBusiness(bizForSync, { classifyNegative: classifyOneReview });
+        triggerInitialInsights(businessId);
       }
     }
   } catch (e) {
@@ -897,6 +911,7 @@ function assertCron(req, res) {
 
 router.post('/reviews/google/sync', auth, async (req, res) => {
   const result = await syncGoogleReviewsForBusiness(req.business, { classifyNegative: classifyOneReview });
+  triggerInitialInsights(req.business.id);
   res.json(result);
 });
 
@@ -920,7 +935,9 @@ router.post('/onboarding/google/location', auth, async (req, res) => {
     reviewLink: reviewLink || (placeId ? `https://search.google.com/local/writereview?placeid=${placeId}` : ''),
   });
   const biz = await getBusiness(req.business.id);
-  syncGoogleReviewsForBusiness(biz, { classifyNegative: classifyOneReview }).catch((e) => console.error(e));
+  syncGoogleReviewsForBusiness(biz, { classifyNegative: classifyOneReview })
+    .then(() => triggerInitialInsights(req.business.id))
+    .catch((e) => console.error(e));
   res.json({ ok: true, googleReviewLink: reviewLink || biz.googleReviewLink, placeId: placeId || biz.placeId });
 });
 
