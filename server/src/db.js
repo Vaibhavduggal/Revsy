@@ -42,8 +42,17 @@ export async function initDb() {
 }
 
 async function seedDemoBusinessAnalytics(businessId) {
-  const { count } = await supabase.from('reviews').select('*', { count: 'exact', head: true }).eq('business_id', businessId);
-  if ((count || 0) > 0) return;
+  const { data: existing } = await supabase
+    .from('reviews')
+    .select('id, rating')
+    .eq('business_id', businessId);
+  const rows = existing || [];
+  const hasNegatives = rows.some((r) => (r.rating || 5) < 4);
+  if (rows.length > 0 && hasNegatives) return;
+
+  if (rows.length > 0) {
+    await supabase.from('reviews').delete().eq('business_id', businessId).eq('source', 'internal');
+  }
 
   const DAY = 86400000;
   const now = Date.now();
@@ -57,7 +66,7 @@ async function seedDemoBusinessAnalytics(businessId) {
   for (let week = 0; week < 12; week++) {
     const perWeek = 2 + (week % 3);
     for (let j = 0; j < perWeek; j++) {
-      const negative = (week + j) % 4 === 0;
+      const negative = (week + j) % 3 === 0;
       reviews.push({
         id: `rev_demo_${week}_${j}`,
         business_id: businessId,

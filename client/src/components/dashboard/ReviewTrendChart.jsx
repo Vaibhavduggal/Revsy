@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useId } from 'react';
 import { Link } from 'react-router-dom';
 import { Badge } from '@/components/ui/badge';
 import { ChartContainer, ChartTooltip } from '@/components/ui/chart';
@@ -14,15 +14,14 @@ import {
 import { ArrowDown, ArrowUp, Calendar, Download, Filter, MoreHorizontal, RefreshCw, Share2 } from 'lucide-react';
 import { Area, CartesianGrid, ComposedChart, Line, ReferenceLine, XAxis, YAxis } from 'recharts';
 
+const CHART_COLORS = {
+  positive: '#7A9B76',
+  negative: '#C2705A',
+};
+
 const chartConfig = {
-  positive: {
-    label: 'Positive',
-    color: 'var(--ok, #7A9B76)',
-  },
-  negative: {
-    label: 'Negative',
-    color: 'var(--warn, #C2705A)',
-  },
+  positive: { label: 'Positive', color: CHART_COLORS.positive },
+  negative: { label: 'Negative', color: CHART_COLORS.negative },
 };
 
 function buildChartData(weeks) {
@@ -48,7 +47,7 @@ function buildChartData(weeks) {
 function ChartLabel({ label, color }) {
   return (
     <div className="flex items-center gap-1.5">
-      <div className="size-3.5 rounded-full border-4 bg-background" style={{ borderColor: color }} />
+      <div className="size-3.5 rounded-full border-4 bg-white" style={{ borderColor: color }} />
       <span className="text-muted-foreground">{label}</span>
     </div>
   );
@@ -93,12 +92,14 @@ function CustomTooltip({ active, payload, label }) {
 }
 
 export default function ReviewTrendChart({ weeks, onRefresh, compact = false }) {
+  const gradientId = useId().replace(/:/g, '');
   const chartData = buildChartData(weeks);
   const currentWeek = chartData[chartData.length - 1]?.week;
   const totalPositive = chartData.reduce((sum, row) => sum + row.positive, 0);
   const totalNegative = chartData.reduce((sum, row) => sum + row.negative, 0);
-  const maxValue = Math.max(1, ...chartData.map((row) => Math.max(row.positive, row.negative, row.total)));
+  const maxValue = Math.max(2, ...chartData.map((row) => Math.max(row.positive, row.negative, row.total)));
   const chartHeight = compact ? 260 : 350;
+  const hasData = totalPositive + totalNegative > 0;
 
   return (
     <Card className={compact ? 'w-full border-0 bg-transparent shadow-none' : 'w-full border-border shadow-xs'}>
@@ -114,8 +115,8 @@ export default function ReviewTrendChart({ weeks, onRefresh, compact = false }) 
         {!compact && (
           <CardToolbar>
             <div className="hidden sm:flex items-center gap-4 text-sm">
-              <ChartLabel label="Positive (4★+)" color={chartConfig.positive.color} />
-              <ChartLabel label="Negative (&lt;4★)" color={chartConfig.negative.color} />
+              <ChartLabel label="Positive (4★+)" color={CHART_COLORS.positive} />
+              <ChartLabel label="Negative (&lt;4★)" color={CHART_COLORS.negative} />
             </div>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -154,25 +155,20 @@ export default function ReviewTrendChart({ weeks, onRefresh, compact = false }) 
       </CardHeader>
 
       <CardContent className={compact ? 'px-0 pb-0 pt-0' : 'px-2.5 pb-6 pt-0'}>
-          <ChartContainer
-            config={chartConfig}
-            className="w-full [&_.recharts-curve.recharts-tooltip-cursor]:stroke-initial"
-            style={{ height: chartHeight, minHeight: chartHeight }}
-          >
-            <ComposedChart data={chartData} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
+        <ChartContainer
+          config={chartConfig}
+          className="w-full [&_.recharts-responsive-container]:!h-full"
+          style={{ height: chartHeight, minHeight: chartHeight, width: '100%' }}
+        >
+            <ComposedChart data={chartData} margin={{ top: 12, right: 16, left: 4, bottom: 4 }}>
               <defs>
-                <linearGradient id="positiveGradient" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor={chartConfig.positive.color} stopOpacity={0.35} />
-                  <stop offset="100%" stopColor={chartConfig.positive.color} stopOpacity={0.05} />
+                <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={CHART_COLORS.positive} stopOpacity={0.35} />
+                  <stop offset="100%" stopColor={CHART_COLORS.positive} stopOpacity={0.05} />
                 </linearGradient>
               </defs>
 
-              <CartesianGrid
-                strokeDasharray="4 4"
-                stroke="#ececf1"
-                horizontal
-                vertical={false}
-              />
+              <CartesianGrid strokeDasharray="4 4" stroke="#ececf1" horizontal vertical={false} />
 
               <XAxis
                 dataKey="week"
@@ -188,25 +184,22 @@ export default function ReviewTrendChart({ weeks, onRefresh, compact = false }) 
                 tickLine={false}
                 tick={{ fontSize: 11, fill: '#6b7280' }}
                 allowDecimals={false}
-                domain={[0, maxValue + 1]}
+                domain={[0, maxValue]}
                 tickMargin={12}
-                width={32}
+                width={36}
               />
 
-              {currentWeek && (
-                <ReferenceLine x={currentWeek} stroke={chartConfig.positive.color} strokeWidth={1} />
+              {currentWeek && hasData && (
+                <ReferenceLine x={currentWeek} stroke={CHART_COLORS.positive} strokeWidth={1} />
               )}
 
-              <ChartTooltip
-                content={<CustomTooltip />}
-                cursor={{ stroke: '#ececf1', strokeWidth: 1 }}
-              />
+              <ChartTooltip content={<CustomTooltip />} cursor={{ stroke: '#ececf1', strokeWidth: 1 }} />
 
               <Area
                 type="monotone"
                 dataKey="positiveArea"
                 stroke="transparent"
-                fill="url(#positiveGradient)"
+                fill={`url(#${gradientId})`}
                 strokeWidth={0}
                 dot={false}
                 isAnimationActive={false}
@@ -215,25 +208,27 @@ export default function ReviewTrendChart({ weeks, onRefresh, compact = false }) 
               <Line
                 type="monotone"
                 dataKey="positive"
-                stroke={chartConfig.positive.color}
-                strokeWidth={2}
-                dot={{ fill: '#ffffff', strokeWidth: 2, r: 4, stroke: chartConfig.positive.color }}
-                activeDot={{ r: 5 }}
+                stroke={CHART_COLORS.positive}
+                strokeWidth={2.5}
+                dot={{ fill: '#ffffff', strokeWidth: 2, r: 4, stroke: CHART_COLORS.positive }}
+                activeDot={{ r: 5, stroke: CHART_COLORS.positive }}
                 isAnimationActive={false}
+                connectNulls
               />
 
               <Line
                 type="monotone"
                 dataKey="negative"
-                stroke={chartConfig.negative.color}
-                strokeWidth={2}
-                strokeDasharray="4 4"
-                dot={{ fill: '#ffffff', strokeWidth: 2, r: 4, stroke: chartConfig.negative.color }}
-                activeDot={{ r: 5 }}
+                stroke={CHART_COLORS.negative}
+                strokeWidth={2.5}
+                strokeDasharray="5 5"
+                dot={{ fill: '#ffffff', strokeWidth: 2, r: 4, stroke: CHART_COLORS.negative }}
+                activeDot={{ r: 5, stroke: CHART_COLORS.negative }}
                 isAnimationActive={false}
+                connectNulls
               />
             </ComposedChart>
-          </ChartContainer>
+        </ChartContainer>
       </CardContent>
     </Card>
   );
