@@ -150,7 +150,7 @@ export default function Landing() {
             Sign up, connect your Google listing and WhatsApp, and Revsy runs quietly in the
             background from day one.
           </p>
-          <button type="button" className="mkt-btn mkt-btn-light mkt-btn-lg" onClick={() => navigate('/signup')}>
+          <button type="button" className="mkt-btn mkt-btn-light mkt-btn-lg" onClick={() => navigate('/demo')}>
             Book a Demo
           </button>
         </div>
