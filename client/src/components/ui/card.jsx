@@ -30,7 +30,7 @@ const cardHeaderVariants = cva('flex items-center justify-between flex-wrap px-5
   },
 });
 
-const cardContentVariants = cva('grow p-5', {
+const cardContentVariants = cva('grow w-full min-w-0 p-5', {
   variants: {
     variant: {
       default: '',
