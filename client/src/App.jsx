@@ -50,7 +50,12 @@ function OnboardingGate({ children }) {
 function PublicOnly({ children }) {
   const { business, ready } = useAuth();
   if (!ready) return <div className="empty">Loading…</div>;
-  if (business) return <Navigate to="/dashboard" replace />;
+  if (business) {
+    if (business.onboardingCompleted === false && !business.isDemo) {
+      return <Navigate to="/onboarding" replace />;
+    }
+    return <Navigate to="/dashboard" replace />;
+  }
   return children;
 }
 
@@ -77,7 +82,7 @@ function AdminPublicOnly({ children }) {
 export default function App() {
   return (
     <Routes>
-      <Route path="/" element={<PublicOnly><Landing /></PublicOnly>} />
+      <Route path="/" element={<Landing />} />
       <Route path="/login" element={<PublicOnly><Login /></PublicOnly>} />
       <Route path="/signup" element={<PublicOnly><Signup /></PublicOnly>} />
       <Route path="/demo" element={<Demo />} />
