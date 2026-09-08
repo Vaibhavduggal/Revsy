@@ -68,10 +68,6 @@ export default function Landing() {
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
 
-  const scrollToLoop = () => {
-    document.getElementById('loop')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  };
-
   const continueSetup = () => {
     markOnboardingIntent();
     navigate('/onboarding');
@@ -120,8 +116,8 @@ export default function Landing() {
               <button type="button" className="mkt-btn mkt-btn-primary mkt-btn-lg" onClick={() => navigate('/signup')}>
                 Get Started
               </button>
-              <button type="button" className="mkt-btn mkt-btn-ghost" onClick={scrollToLoop}>
-                See how it works
+              <button type="button" className="mkt-btn mkt-btn-ghost" onClick={() => navigate('/demo')}>
+                Show live demo
               </button>
             </div>
           </div>

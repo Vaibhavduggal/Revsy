@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import crypto from 'crypto';
-import { getDb, getBusiness, renderTemplate, hashPassword, verifyPassword, newToken, defaultTemplate, mapBusiness, mapCustomer, mapRequest, mapReview, mapReviewSummary, mapFeedback, mapPendingSend, mapActivity } from './db.js';
+import { getDb, getBusiness, renderTemplate, hashPassword, verifyPassword, newToken, defaultTemplate, mapBusiness, mapCustomer, mapRequest, mapReview, mapReviewSummary, mapFeedback, mapPendingSend, mapActivity, seedDemoBusinessAnalytics } from './db.js';
 import { auth, adminAuth, recordActivity, publicBusiness } from './auth.js';
 import { enqueueSend, retrySend, getFailedSends, processDueSends } from './queue.js';
 import { classifyOneReview, weeklyUpdateBusiness, getCurrentSummaryRow, issuesFromRow, runFirstClusteringForBusiness } from './ai.js';
@@ -246,6 +246,7 @@ router.post('/login/demo', async (req, res) => {
   const { data: bizData } = await db.from('businesses').select('*').eq('is_demo', true).limit(1).maybeSingle();
   if (!bizData) return res.status(404).json({ error: 'Demo account not available' });
   const business = mapBusiness(bizData);
+  await seedDemoBusinessAnalytics(business.id);
   const token = newToken();
   await db.from('sessions').insert({ token, business_id: business.id, created_at: new Date().toISOString() });
   res.json({ token, business: publicBusiness(business) });

@@ -54,3 +54,31 @@
   --destructive-foreground: #ffffff;
   --color-destructive-foreground: #ffffff;
 }
+
+/* Shadcn layout — global `.flex` in styles.css sets align-items:center and wins over
+   missing Tailwind utilities, which collapsed chart cards to ~0 width in production. */
+[data-slot="card"] {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  width: 100%;
+}
+
+[data-slot="card-header"] {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  width: 100%;
+}
+
+[data-slot="card-content"] {
+  width: 100%;
+  min-width: 0;
+}
+
+[data-slot="chart"] {
+  display: block;
+  width: 100%;
+  min-width: 0;
+}

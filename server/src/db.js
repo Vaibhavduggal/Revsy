@@ -926,3 +926,4 @@ function pad(n, w) { return String(n).padStart(w, '0'); }
 export const defaultTemplate = DEFAULT_TEMPLATE;
 export { mapBusiness, mapCustomer, mapRequest, mapReview, mapReviewSummary, mapFeedback, mapPendingSend, mapActivity, mapSession, mapAdminSession, mapAdmin };
 export { toBusinessRow, toCustomerRow, toRequestRow, toReviewRow, toReviewSummaryRow, toFeedbackRow, toPendingSendRow, toActivityRow };
+export { seedDemoBusinessAnalytics };
