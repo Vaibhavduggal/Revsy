@@ -6,6 +6,7 @@ import { Icon } from '../components/Icons.jsx';
 import { useToast } from '../components/useToast.jsx';
 import { getCopy } from '../utils/categoryCopy.js';
 import ReviewTrendChart from '../components/dashboard/ReviewTrendChart.jsx';
+import ReviewActions from '../components/ReviewActions.jsx';
 
 function StatusBadge({ status }) {
   const map = { Sent: 'sent', Opened: 'opened', Reviewed: 'reviewed', Scheduled: 'scheduled' };
@@ -71,7 +72,7 @@ function timeAgo(iso) {
   return `${Math.floor(h / 24)}d ago`;
 }
 
-function ReviewCard({ r, negative, onRead }) {
+function ReviewCard({ r, negative, googleReportUrl, busy, onMarkRead, onAcknowledge, onFlagFake }) {
   const unread = r.isRead === false;
   return (
     <div style={{
@@ -80,7 +81,7 @@ function ReviewCard({ r, negative, onRead }) {
       borderRadius: 8,
       padding: unread ? 8 : '0 0 10px 0',
     }}>
-      <div className="flex between">
+      <div className="flex between wrap">
         <b style={{ fontSize: 13, fontWeight: unread ? 800 : 600 }}>
           {unread && <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: negative ? 'var(--warn)' : 'var(--ok)', marginRight: 6 }} />}
           {r.customerName}
@@ -90,15 +91,23 @@ function ReviewCard({ r, negative, onRead }) {
         </span>
       </div>
       {r.text && <div className="muted" style={{ fontSize: 13, marginTop: 4 }}>{r.text}</div>}
-      <div className="flex between" style={{ marginTop: 4 }}>
+      <div className="flex between wrap" style={{ marginTop: 8, gap: 8 }}>
         <div className="csv-hint" style={{ marginTop: 0 }}>
           {r.source === 'google' ? 'Google' : 'Internal'} · {timeAgo(r.createdAt)}
+          {r.suspectedFake && <span className="badge warn sm" style={{ marginLeft: 6 }}>Suspected fake</span>}
           {r.aiFlag === 'repeated' && <span className="badge opened sm" style={{ marginLeft: 6 }}>Repeated</span>}
           {r.aiFlag === 'new_issue' && <span className="badge reviewed sm" style={{ marginLeft: 6 }}>New issue</span>}
+          {r.googleReplyPostedAt && <span className="badge sent sm" style={{ marginLeft: 6 }}>Replied</span>}
         </div>
-        {unread && r.id && !String(r.id).startsWith('fb_') && (
-          <button className="btn ghost sm" onClick={() => onRead(r.id)}>Mark read</button>
-        )}
+        <ReviewActions
+          review={r}
+          negative={negative}
+          googleReportUrl={googleReportUrl}
+          busy={busy}
+          onMarkRead={onMarkRead}
+          onAcknowledge={onAcknowledge}
+          onFlagFake={onFlagFake}
+        />
       </div>
     </div>
   );
@@ -156,10 +165,11 @@ export default function Dashboard() {
   const [failed, setFailed] = useState([]);
   const [retrying, setRetrying] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [reviewList, setReviewList] = useState({ positive: [], negative: [], suggestions: [], complaints: [] });
+  const [reviewList, setReviewList] = useState({ positive: [], negative: [], suggestions: [], complaints: [], googleReportUrl: '' });
   const [summaries, setSummaries] = useState(null);
   const [syncing, setSyncing] = useState(false);
   const [quickAddOpen, setQuickAddOpen] = useState(false);
+  const [reviewBusy, setReviewBusy] = useState(null);
 
   const load = useCallback(async () => {
     try {
@@ -184,15 +194,47 @@ export default function Dashboard() {
 
   useEffect(() => { load(); }, [load]);
 
+  const patchReview = (id, patch) => {
+    setReviewList((rl) => ({
+      ...rl,
+      positive: (rl.positive || []).map((r) => (r.id === id ? { ...r, ...patch } : r)),
+      negative: (rl.negative || []).map((r) => (r.id === id ? { ...r, ...patch } : r)),
+    }));
+  };
+
   const markRead = async (id) => {
+    setReviewBusy(id);
     try {
-      await api.markReviewRead(id);
-      setReviewList((rl) => ({
-        ...rl,
-        positive: (rl.positive || []).map((r) => (r.id === id ? { ...r, isRead: true } : r)),
-        negative: (rl.negative || []).map((r) => (r.id === id ? { ...r, isRead: true } : r)),
-      }));
+      const r = await api.markReviewRead(id);
+      patchReview(id, { isRead: true, googleReplyPostedAt: r.googleReplyPosted ? new Date().toISOString() : null });
+      if (r.warning) show(r.warning);
+      else if (r.googleReplyPosted) show('Thank-you reply posted on Google');
+      else show('Marked as read');
     } catch (e) { show(e.message); }
+    finally { setReviewBusy(null); }
+  };
+
+  const acknowledgeReview = async (id) => {
+    setReviewBusy(id);
+    try {
+      const r = await api.acknowledgeReview(id);
+      patchReview(id, { isRead: true, googleReplyPostedAt: r.googleReplyPosted ? new Date().toISOString() : null });
+      if (r.warning) show(r.warning);
+      else if (r.googleReplyPosted) show('Acknowledgement posted on Google');
+      else show('Review acknowledged');
+    } catch (e) { show(e.message); }
+    finally { setReviewBusy(null); }
+  };
+
+  const flagFake = async (id) => {
+    setReviewBusy(id);
+    try {
+      const r = await api.flagReviewFake(id);
+      patchReview(id, { isRead: true, suspectedFake: true });
+      show('Flagged internally — use Report to Google if needed');
+      if (r.reportUrl) setReviewList((rl) => ({ ...rl, googleReportUrl: r.reportUrl }));
+    } catch (e) { show(e.message); }
+    finally { setReviewBusy(null); }
   };
 
   const markIssueRead = async (issueId) => {
@@ -378,7 +420,16 @@ export default function Dashboard() {
           ) : (
             <div className="flex col" style={{ gap: 10, maxHeight: 320, overflowY: 'auto' }}>
               {reviewList.positive.slice(0, 6).map((r) => (
-                <ReviewCard key={r.id} r={r} negative={false} onRead={markRead} />
+                <ReviewCard
+                  key={r.id}
+                  r={r}
+                  negative={false}
+                  googleReportUrl={reviewList.googleReportUrl}
+                  busy={reviewBusy === r.id}
+                  onMarkRead={markRead}
+                  onAcknowledge={acknowledgeReview}
+                  onFlagFake={flagFake}
+                />
               ))}
             </div>
           )}
@@ -394,7 +445,16 @@ export default function Dashboard() {
           ) : (
             <div className="flex col" style={{ gap: 10, maxHeight: 320, overflowY: 'auto' }}>
               {reviewList.negative.slice(0, 6).map((r) => (
-                <ReviewCard key={r.id} r={r} negative onRead={markRead} />
+                <ReviewCard
+                  key={r.id}
+                  r={r}
+                  negative
+                  googleReportUrl={reviewList.googleReportUrl}
+                  busy={reviewBusy === r.id}
+                  onMarkRead={markRead}
+                  onAcknowledge={acknowledgeReview}
+                  onFlagFake={flagFake}
+                />
               ))}
             </div>
           )}

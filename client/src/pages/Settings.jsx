@@ -17,7 +17,12 @@ const TEMPLATE_FIELDS = [
   { key: 'sadFollowup', label: 'Message 2b — After 😞 Not great', hint: 'Private complaint prompt — never public.' },
 ];
 
-const EMPTY_TEMPLATES = { gate: '', happyFollowup: '', googleAsk: '', sadFollowup: '' };
+const REPLY_TEMPLATE_FIELDS = [
+  { key: 'positiveReply', label: 'Google reply — positive review', hint: 'Posted when you mark a positive Google review as read.' },
+  { key: 'negativeAcknowledge', label: 'Google reply — negative acknowledge', hint: 'Posted when you acknowledge a negative Google review.' },
+];
+
+const EMPTY_TEMPLATES = { gate: '', happyFollowup: '', googleAsk: '', sadFollowup: '', positiveReply: '', negativeAcknowledge: '' };
 
 export default function Settings() {
   const { business, setBusiness } = useAuth();
@@ -141,6 +146,21 @@ export default function Settings() {
                 rows={key === 'gate' ? 5 : 4}
               />
               <span className="csv-hint">{hint}</span>
+            </div>
+          ))}
+          <div className="divider" />
+          <h3 style={{ fontSize: 15, marginBottom: 4 }}>Google review auto-replies</h3>
+          <div className="sub" style={{ marginBottom: 12 }}>Posted on your behalf when you mark reviews read from the dashboard.</div>
+          {REPLY_TEMPLATE_FIELDS.map(({ key, label, hint }) => (
+            <div className="field" key={key}>
+              <label>{label}</label>
+              <textarea
+                className="textarea"
+                value={form.messageTemplates[key] || ''}
+                onChange={(e) => updateTemplate(key, e.target.value)}
+                rows={3}
+              />
+              <span className="csv-hint">{hint} Variables: {'{{business_name}}'}</span>
             </div>
           ))}
           <div className="csv-hint" style={{ marginBottom: 14 }}>Available variables: {TEMPLATE_VARS}</div>

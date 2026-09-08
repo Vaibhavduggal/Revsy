@@ -57,7 +57,7 @@ p { margin: 0; }
 .btn.secondary:hover { background: var(--bg-soft); }
 .btn.ghost { background: transparent; color: var(--accent); border-color: transparent; padding: 8px 10px; }
 .btn.ghost:hover { background: var(--accent-soft); }
-.btn.sm { padding: 8px 12px; font-size: 13px; }
+.btn.sm { padding: 10px 14px; font-size: 13px; min-height: 44px; }
 .btn.green { background: var(--ok); }
 .btn.green:hover { background: #658564; }
 .btn:disabled { opacity: .55; cursor: not-allowed; }
@@ -277,6 +277,13 @@ p { margin: 0; }
 .mom-card { font-size: 14px; }
 
 /* ---------- Responsive ---------- */
+.touch-target { min-height: 44px; min-width: 44px; }
+.review-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: flex-end; }
+
+@media (max-width: 1280px) {
+  .page { max-width: 100%; }
+}
+
 @media (max-width: 860px) {
   .stat-grid { grid-template-columns: repeat(2, 1fr); }
   .row.two, .row.even { grid-template-columns: 1fr; }
@@ -284,8 +291,18 @@ p { margin: 0; }
   .nav { gap: 0; }
   .nav a { padding: 8px 9px; font-size: 13px; }
   .topbar { padding: 12px 14px; }
-  .page { padding: 20px 14px 50px; }
+  .page { padding: 20px 14px 50px; overflow-x: hidden; }
   .page-head { flex-direction: column; align-items: flex-start; }
+  .table { display: block; overflow-x: auto; }
+  .btn, .input, .select, .textarea { font-size: 16px; }
+  .onb-steps { gap: 6px; }
+  .onb-step { font-size: 11px; padding: 8px 10px; }
+}
+
+@media (max-width: 480px) {
+  .stat-grid { grid-template-columns: 1fr; }
+  .page-head .flex { width: 100%; }
+  .page-head .btn { flex: 1 1 auto; justify-content: center; }
 }
 
 /* ---------- Flex helpers ---------- */

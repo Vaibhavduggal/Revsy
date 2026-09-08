@@ -46,6 +46,53 @@ async function googleGet(url, accessToken) {
   return data;
 }
 
+async function googlePut(url, accessToken, body) {
+  const res = await fetch(url, {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const msg = data.error?.message || data.error_description || JSON.stringify(data).slice(0, 240);
+    throw new Error(`Google ${res.status}: ${msg}`);
+  }
+  return data;
+}
+
+export function buildGoogleReviewResourceName(business, googleReviewId) {
+  if (!googleReviewId) return null;
+  const id = String(googleReviewId);
+  if (id.includes('/reviews/')) return id;
+  const loc = business?.googleLocationName;
+  if (!loc) return null;
+  return `${loc}/reviews/${id}`;
+}
+
+/** Post owner reply via GBP API (requires business.manage scope). */
+export async function postGoogleReviewReply(business, googleReviewId, comment) {
+  const accessToken = await refreshGoogleAccessToken(business);
+  if (!accessToken) throw new Error('Google account is not connected');
+  const reviewName = buildGoogleReviewResourceName(business, googleReviewId);
+  if (!reviewName) throw new Error('Google location or review ID is missing');
+  const url = `https://mybusiness.googleapis.com/v4/${reviewName}/reply`;
+  return googlePut(url, accessToken, { comment: String(comment || '').slice(0, 4000) });
+}
+
+export function googleReviewReportUrl(business) {
+  const pid = business?.placeId;
+  if (pid && !String(pid).includes('accounts/') && !String(pid).includes('/locations/')) {
+    return `https://www.google.com/maps/place/?q=place_id:${encodeURIComponent(pid)}`;
+  }
+  const link = business?.googleReviewLink || '';
+  try {
+    const u = new URL(link);
+    const placeid = u.searchParams.get('placeid');
+    if (placeid) return `https://www.google.com/maps/place/?q=place_id:${encodeURIComponent(placeid)}`;
+  } catch { /* ignore */ }
+  return 'https://business.google.com/reviews';
+}
+
 export async function listGoogleLocations(business) {
   const accessToken = await refreshGoogleAccessToken(business);
   if (!accessToken) throw new Error('Google account is not connected');
@@ -99,7 +146,7 @@ async function fetchGbpReviews(accessToken, locationName) {
     for (const rev of page.reviews || []) {
       const created = rev.createTime || rev.updateTime;
       out.push({
-        googleReviewId: rev.reviewId || rev.name,
+        googleReviewId: rev.name || rev.reviewId,
         customerName: rev.reviewer?.displayName || 'Google user',
         rating: mapStar(rev.starRating, rev.starRatingValue),
         text: rev.comment || '',
@@ -118,12 +165,11 @@ function newId(prefix) {
 export async function saveSelectedLocation(businessId, location) {
   const db = getDb();
   const updates = {
-    place_id: location.locationName || location.placeId || '',
+    google_location_name: location.locationName || null,
     google_review_link: location.reviewLink || '',
   };
-  if (location.placeId && location.locationName) {
-    updates.place_id = location.locationName;
-  }
+  if (location.placeId) updates.place_id = location.placeId;
+  else if (location.locationName) updates.place_id = location.locationName;
   await db.from('businesses').update(updates).eq('id', businessId);
 }
 

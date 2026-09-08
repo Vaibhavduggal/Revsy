@@ -219,6 +219,9 @@ export async function firstRunClustering(businessId, items, issueKind = 'complai
 
 export async function classifyOneReview(businessId, review) {
   const db = getDb();
+  if (review?.suspected_fake) {
+    return { decision: 'excluded', issueId: null, kind: 'complaint' };
+  }
   const current = await getCurrentSummaryRow(businessId);
   const issues = issuesFromRow(current);
   const issueKind = inferFeedbackKind(review);
@@ -305,7 +308,7 @@ export async function weeklyUpdateBusiness(businessId) {
   if (!current) {
     const since = new Date(Date.now() - 365 * 86400000).toISOString();
     const { data } = await db.from('reviews').select('*').eq('business_id', businessId).gte('created_at', since).order('created_at', { ascending: true }).limit(200);
-    const all = (data || []).filter((r) => !r.ai_flag);
+    const all = (data || []).filter((r) => !r.ai_flag && !r.suspected_fake);
     const negatives = all.filter((r) => Number(r.rating) < 4);
     const suggestions = all.filter((r) => Number(r.rating) >= 4 && r.source === 'internal');
     if (!negatives.length && !suggestions.length) { await ensureCurrentSummaryRow(businessId); return { processed: 0 }; }
@@ -316,7 +319,7 @@ export async function weeklyUpdateBusiness(businessId) {
     } catch { return { processed: 0, error: 'AI failed, retry next run' }; }
   }
   const { data } = await db.from('reviews').select('*').eq('business_id', businessId).is('ai_flag', null).order('created_at', { ascending: true }).limit(100);
-  const fresh = (data || []).filter((r) => Number(r.rating) < 4 || (r.source === 'internal' && Number(r.rating) >= 4));
+  const fresh = (data || []).filter((r) => !r.suspected_fake && (Number(r.rating) < 4 || (r.source === 'internal' && Number(r.rating) >= 4)));
   let processed = 0;
   for (const r of fresh) {
     try {
@@ -337,7 +340,7 @@ export async function runFirstClusteringForBusiness(businessId) {
   const db = getDb();
   const since = new Date(Date.now() - 365 * 86400000).toISOString();
   const { data } = await db.from('reviews').select('*').eq('business_id', businessId).gte('created_at', since).order('created_at', { ascending: true }).limit(200);
-  const all = (data || []).filter((r) => !r.ai_flag);
+  const all = (data || []).filter((r) => !r.ai_flag && !r.suspected_fake);
   const negatives = all.filter((r) => Number(r.rating) < 4).map((r) => ({ id: r.id, rating: r.rating, text: r.text }));
   const suggestions = all.filter((r) => Number(r.rating) >= 4 && r.source === 'internal').map((r) => ({ id: r.id, rating: r.rating, text: r.text }));
   if (negatives.length) await firstRunClustering(businessId, negatives, 'complaint');

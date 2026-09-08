@@ -173,6 +173,30 @@
 }
 .mkt-nav-links a:hover { color: var(--m-ink); }
 
+.mkt-nav-toggle {
+  display: none;
+  flex-direction: column;
+  justify-content: center;
+  gap: 5px;
+  width: 44px;
+  height: 44px;
+  padding: 10px;
+  border: 1px solid var(--m-line);
+  border-radius: 10px;
+  background: #fff;
+  cursor: pointer;
+  margin-left: auto;
+}
+.mkt-nav-toggle span {
+  display: block;
+  height: 2px;
+  width: 100%;
+  background: var(--m-ink);
+  border-radius: 1px;
+}
+
+.mkt-nav-cta { flex-shrink: 0; }
+
 /* Hero — ambient mesh drift */
 .mkt-hero {
   position: relative;
@@ -509,17 +533,44 @@
 }
 
 /* Mobile */
-@media (max-width: 900px) {
+@media (max-width: 768px) {
   .mkt-nav {
     flex-wrap: wrap;
     gap: 12px;
-    padding: 16px 20px;
+    padding: 14px 20px;
+    position: relative;
   }
-  .mkt-nav-links { display: none; }
-  .mkt-nav .mkt-btn-primary { margin-left: auto; }
+  .mkt-nav-toggle { display: flex; }
+  .mkt-nav-cta { display: none; }
+  .mkt-nav-links {
+    display: none;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 4px;
+    width: 100%;
+    order: 10;
+    padding: 12px 0 4px;
+    border-top: 1px solid var(--m-line);
+  }
+  .mkt-nav-links--open { display: flex; }
+  .mkt-nav-links a,
+  .mkt-nav-links .mkt-link-btn {
+    padding: 12px 8px;
+    font-size: 15px;
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+  }
+  .mkt-nav-links--open .mkt-btn {
+    width: 100%;
+    margin-top: 8px;
+    min-height: 44px;
+  }
 
   .mkt-container { padding: 0 20px; }
 
+  .mkt-hero { padding: 48px 0 72px; }
+  .mkt-hero-mesh { animation-duration: 90s; }
   .mkt-hero-inner {
     grid-template-columns: 1fr;
     text-align: center;
@@ -528,8 +579,7 @@
   .mkt-lead { margin-left: auto; margin-right: auto; }
   .mkt-hero-actions { justify-content: center; }
   .mkt-hero-motif { order: -1; min-height: 120px; }
-  .mkt-hero-motif .mkt-motif,
-  .mkt-hero-motif .rupee-coin { width: 100px; height: 100px; }
+  .mkt-hero-motif .rupee-coin { width: 120px; height: 120px; }
 
   .mkt-industry-grid {
     grid-template-columns: 1fr;

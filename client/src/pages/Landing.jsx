@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Logo } from '../components/Icons.jsx';
 import ReviewMotif from '../components/marketing/ReviewMotif.jsx';
+import RupeeCoin from '../components/marketing/RupeeCoin.jsx';
 import AnimatedHeadline from '../components/marketing/AnimatedHeadline.jsx';
 import LoopBeat from '../components/marketing/LoopBeat.jsx';
 import DrawGeoAccent from '../components/marketing/DrawGeoAccent.jsx';
@@ -48,6 +49,7 @@ export default function Landing() {
   const navigate = useNavigate();
   const heroRef = useRef(null);
   const [navScrolled, setNavScrolled] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
 
   useEffect(() => {
     const hero = heroRef.current;
@@ -73,13 +75,23 @@ export default function Landing() {
         <a className="mkt-brand" href="/" onClick={(e) => { e.preventDefault(); navigate('/'); }}>
           <Logo /><span>Revsy</span>
         </a>
-        <nav className="mkt-nav-links" aria-label="Primary">
-          <a href="#loop">How it works</a>
-          <a href="#restaurants">For Restaurants</a>
-          <a href="#gyms">For Gyms</a>
-          <button type="button" className="mkt-link-btn" onClick={() => navigate('/login')}>Sign in</button>
+        <button
+          type="button"
+          className="mkt-nav-toggle"
+          aria-expanded={mobileOpen}
+          aria-label="Toggle menu"
+          onClick={() => setMobileOpen((v) => !v)}
+        >
+          <span /><span /><span />
+        </button>
+        <nav className={`mkt-nav-links${mobileOpen ? ' mkt-nav-links--open' : ''}`} aria-label="Primary">
+          <a href="#loop" onClick={() => setMobileOpen(false)}>How it works</a>
+          <a href="#restaurants" onClick={() => setMobileOpen(false)}>For Restaurants</a>
+          <a href="#gyms" onClick={() => setMobileOpen(false)}>For Gyms</a>
+          <button type="button" className="mkt-link-btn" onClick={() => { setMobileOpen(false); navigate('/login'); }}>Sign in</button>
+          <button type="button" className="mkt-btn mkt-btn-primary" onClick={() => { setMobileOpen(false); navigate('/signup'); }}>Get Started</button>
         </nav>
-        <button type="button" className="mkt-btn mkt-btn-primary" onClick={() => navigate('/signup')}>
+        <button type="button" className="mkt-btn mkt-btn-primary mkt-nav-cta" onClick={() => navigate('/signup')}>
           Get Started
         </button>
       </header>
@@ -104,7 +116,7 @@ export default function Landing() {
             </div>
           </div>
           <div className="mkt-hero-motif" aria-hidden="true">
-            <ReviewMotif size={160} className="mkt-motif" />
+            <RupeeCoin size={160} />
           </div>
         </div>
       </section>

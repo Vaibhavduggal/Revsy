@@ -4,7 +4,7 @@ import { getDb, getBusiness, renderTemplate, hashPassword, verifyPassword, newTo
 import { auth, adminAuth, recordActivity, publicBusiness } from './auth.js';
 import { enqueueSend, retrySend, getFailedSends, processDueSends } from './queue.js';
 import { classifyOneReview, weeklyUpdateBusiness, getCurrentSummaryRow, issuesFromRow, runFirstClusteringForBusiness } from './ai.js';
-import { listGoogleLocations, saveSelectedLocation, autoSelectLocationIfSingle, syncGoogleReviewsForBusiness } from './google.js';
+import { listGoogleLocations, saveSelectedLocation, autoSelectLocationIfSingle, syncGoogleReviewsForBusiness, postGoogleReviewReply, googleReviewReportUrl } from './google.js';
 import { buildSupabaseGoogleAuthUrl, getPublicSupabaseConfig, signOAuthState, verifyOAuthState, verifySupabaseAccessToken } from './supabase-auth.js';
 import { getCopy, defaultTemplateFor, defaultMessageTemplates, messagePresetsFor, normalizeCategory, renderBusinessTemplate, resolveMessageTemplates } from './categoryCopy.js';
 import { resolveFrontendUrl, resolveGoogleRedirectUri, buildGoogleAuthUrl, googleClientId, googleClientSecret, GOOGLE_SIGNIN_SCOPES, GOOGLE_BUSINESS_SCOPES, googleAccessDeniedMessage } from './oauth-urls.js';
@@ -39,6 +39,57 @@ function triggerInitialInsights(businessId) {
       console.error('initial AI insights failed (retry on cron):', e.message);
     }
   })();
+}
+
+async function logReplyAudit(db, payload) {
+  await db.from('review_reply_audit').insert({
+    id: newId('rpa'),
+    business_id: payload.businessId,
+    review_id: payload.reviewId,
+    action: payload.action,
+    template_key: payload.templateKey || null,
+    reply_text: payload.replyText || '',
+    google_review_id: payload.googleReviewId || null,
+    success: !!payload.success,
+    error_message: payload.errorMessage || null,
+    posted_at: new Date().toISOString(),
+  });
+}
+
+async function postReviewReplyIfGoogle(business, reviewRow, replyText, templateKey, action) {
+  const db = getDb();
+  let googlePosted = false;
+  let googleError = null;
+
+  if (reviewRow.source === 'google' && business.googleConnected && !business.isDemo && reviewRow.google_review_id) {
+    try {
+      await postGoogleReviewReply(business, reviewRow.google_review_id, replyText);
+      googlePosted = true;
+    } catch (e) {
+      googleError = e.message;
+      console.error('Google review reply failed:', e.message);
+    }
+  }
+
+  const updates = { is_read: true };
+  if (googlePosted) {
+    updates.google_reply_posted_at = new Date().toISOString();
+    updates.google_reply_text = replyText;
+  }
+  await db.from('reviews').update(updates).eq('id', reviewRow.id).eq('business_id', business.id);
+
+  await logReplyAudit(db, {
+    businessId: business.id,
+    reviewId: reviewRow.id,
+    action,
+    templateKey,
+    replyText,
+    googleReviewId: reviewRow.google_review_id,
+    success: googlePosted || reviewRow.source !== 'google' || business.isDemo,
+    errorMessage: googleError,
+  });
+
+  return { googlePosted, googleError };
 }
 
 export const MESSAGE_PRESETS = messagePresetsFor('restaurant');
@@ -806,13 +857,106 @@ router.delete('/reviews/last', auth, async (req, res) => {
 router.get('/reviews/list', auth, async (req, res) => {
   const biz = req.business;
   const reviews = await getReviewsForBusiness(biz.id);
-  const positive = reviews.filter((r) => (r.rating || 5) >= 4).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).map((r) => ({ id: r.id, customerName: r.customerName || 'Anonymous', rating: r.rating, text: r.text || '', source: r.source || 'internal', createdAt: r.createdAt, isRead: !!r.isRead }));
-  const negativeFromReviews = reviews.filter((r) => (r.rating || 5) < 4).map((r) => ({ id: r.id, customerName: r.customerName || 'Anonymous', rating: r.rating, text: r.text || '', source: r.source || 'google', createdAt: r.createdAt, isRead: !!r.isRead, aiFlag: r.aiFlag || null, aiIssueId: r.aiIssueId || null }));
+  const positive = reviews.filter((r) => (r.rating || 5) >= 4).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).map((r) => ({
+    id: r.id, customerName: r.customerName || 'Anonymous', rating: r.rating, text: r.text || '', source: r.source || 'internal',
+    createdAt: r.createdAt, isRead: !!r.isRead, suspectedFake: !!r.suspectedFake, googleReplyPostedAt: r.googleReplyPostedAt || null,
+  }));
+  const negativeFromReviews = reviews.filter((r) => (r.rating || 5) < 4).map((r) => ({
+    id: r.id, customerName: r.customerName || 'Anonymous', rating: r.rating, text: r.text || '', source: r.source || 'google',
+    createdAt: r.createdAt, isRead: !!r.isRead, aiFlag: r.aiFlag || null, aiIssueId: r.aiIssueId || null,
+    suspectedFake: !!r.suspectedFake, googleReviewId: r.googleReviewId || null, googleReplyPostedAt: r.googleReplyPostedAt || null,
+  }));
   const feedbackList = await getFeedbackForBusiness(biz.id);
   const suggestions = feedbackList.filter((f) => f.type === 'suggestion').sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   const complaints = feedbackList.filter((f) => f.type !== 'suggestion').sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   const negative = negativeFromReviews.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-  res.json({ positive, negative, suggestions, complaints });
+  res.json({ positive, negative, suggestions, complaints, googleReportUrl: googleReviewReportUrl(biz) });
+});
+
+router.get('/reviews/reply-audit', auth, async (req, res) => {
+  const db = getDb();
+  const { data } = await db.from('review_reply_audit')
+    .select('*')
+    .eq('business_id', req.business.id)
+    .order('posted_at', { ascending: false })
+    .limit(50);
+  res.json({
+    entries: (data || []).map((row) => ({
+      id: row.id,
+      reviewId: row.review_id,
+      action: row.action,
+      templateKey: row.template_key,
+      replyText: row.reply_text,
+      googleReviewId: row.google_review_id,
+      success: !!row.success,
+      errorMessage: row.error_message,
+      postedAt: row.posted_at,
+    })),
+  });
+});
+
+router.post('/reviews/:id/read', auth, async (req, res) => {
+  const db = getDb();
+  const biz = req.business;
+  const { data: row } = await db.from('reviews').select('*').eq('id', req.params.id).eq('business_id', biz.id).single();
+  if (!row) return res.status(404).json({ error: 'Review not found' });
+
+  const isPositive = (row.rating || 5) >= 4;
+  if (!isPositive) {
+    return res.status(400).json({ error: 'Use Acknowledge or Flag for negative reviews' });
+  }
+
+  const templates = resolveMessageTemplates(biz);
+  const replyText = renderBusinessTemplate(templates.positiveReply, biz, { name: row.customer_name });
+  const { googlePosted, googleError } = await postReviewReplyIfGoogle(biz, row, replyText, 'positiveReply', 'positive_reply');
+
+  if (googleError && row.source === 'google' && !biz.isDemo) {
+    return res.json({ ok: true, googleReplyPosted: false, warning: `Marked read but Google reply failed: ${googleError}` });
+  }
+  res.json({ ok: true, googleReplyPosted: googlePosted });
+});
+
+router.post('/reviews/:id/acknowledge', auth, async (req, res) => {
+  const db = getDb();
+  const biz = req.business;
+  const { data: row } = await db.from('reviews').select('*').eq('id', req.params.id).eq('business_id', biz.id).single();
+  if (!row) return res.status(404).json({ error: 'Review not found' });
+  if ((row.rating || 5) >= 4) return res.status(400).json({ error: 'Acknowledge is only for negative reviews' });
+
+  const templates = resolveMessageTemplates(biz);
+  const replyText = renderBusinessTemplate(templates.negativeAcknowledge, biz, { name: row.customer_name });
+  const { googlePosted, googleError } = await postReviewReplyIfGoogle(biz, row, replyText, 'negativeAcknowledge', 'negative_acknowledge');
+
+  if (googleError && row.source === 'google' && !biz.isDemo) {
+    return res.json({ ok: true, googleReplyPosted: false, warning: `Marked read but Google reply failed: ${googleError}` });
+  }
+  res.json({ ok: true, googleReplyPosted: googlePosted });
+});
+
+router.post('/reviews/:id/flag-fake', auth, async (req, res) => {
+  const db = getDb();
+  const biz = req.business;
+  const { data: row } = await db.from('reviews').select('*').eq('id', req.params.id).eq('business_id', biz.id).single();
+  if (!row) return res.status(404).json({ error: 'Review not found' });
+
+  await db.from('reviews').update({
+    is_read: true,
+    suspected_fake: true,
+    ai_flag: 'excluded',
+  }).eq('id', row.id).eq('business_id', biz.id);
+
+  await logReplyAudit(db, {
+    businessId: biz.id,
+    reviewId: row.id,
+    action: 'flag_suspected_fake',
+    templateKey: null,
+    replyText: '',
+    googleReviewId: row.google_review_id,
+    success: true,
+    errorMessage: null,
+  });
+
+  res.json({ ok: true, reportUrl: googleReviewReportUrl(biz) });
 });
 
 router.get('/reviews/all', auth, async (req, res) => {
@@ -821,12 +965,6 @@ router.get('/reviews/all', auth, async (req, res) => {
   const per = 20;
   const { data, count } = await db.from('reviews').select('*', { count: 'exact' }).eq('business_id', req.business.id).order('created_at', { ascending: false }).range((page - 1) * per, page * per - 1);
   res.json({ reviews: (data || []).map(mapReview), total: count || 0, page, perPage: per, pages: Math.ceil((count || 0) / per) });
-});
-
-router.post('/reviews/:id/read', auth, async (req, res) => {
-  const db = getDb();
-  await db.from('reviews').update({ is_read: true }).eq('id', req.params.id).eq('business_id', req.business.id);
-  res.json({ ok: true });
 });
 
 router.get('/reviews/summaries', auth, async (req, res) => {
@@ -1066,7 +1204,7 @@ router.put('/settings', auth, async (req, res) => {
   if (typeof feedbackLink === 'string') updates.feedback_link = feedbackLink.trim();
   const templatesPatch = { ...(b.messageTemplates || {}) };
   if (messageTemplates && typeof messageTemplates === 'object') {
-    for (const key of ['gate', 'happyFollowup', 'googleAsk', 'sadFollowup']) {
+    for (const key of ['gate', 'happyFollowup', 'googleAsk', 'sadFollowup', 'positiveReply', 'negativeAcknowledge']) {
       if (typeof messageTemplates[key] === 'string' && messageTemplates[key].trim()) {
         templatesPatch[key] = messageTemplates[key].trim();
       }

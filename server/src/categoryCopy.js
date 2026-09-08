@@ -87,6 +87,10 @@ export function defaultMessageTemplates(category) {
       'That means a lot to us! Would you mind dropping us a quick Google review? It takes less than a minute and really helps us out 🙏\n{{google_review_link}}',
     sadFollowup:
       'Sorry to hear that. Please tell us what went wrong so we can make it right — this goes straight to the owner, not anywhere public.',
+    positiveReply:
+      'Thank you so much for the kind words — it means a lot to us! We hope to see you again soon.',
+    negativeAcknowledge:
+      "We're sorry you experienced this. We're working to fix this issue and would appreciate the chance to make it right.",
   };
 }
 
@@ -107,6 +111,8 @@ export function resolveMessageTemplates(business) {
     happyFollowup: (stored.happyFollowup && String(stored.happyFollowup).trim()) || defaults.happyFollowup,
     googleAsk: (stored.googleAsk && String(stored.googleAsk).trim()) || defaults.googleAsk,
     sadFollowup: (stored.sadFollowup && String(stored.sadFollowup).trim()) || defaults.sadFollowup,
+    positiveReply: (stored.positiveReply && String(stored.positiveReply).trim()) || defaults.positiveReply,
+    negativeAcknowledge: (stored.negativeAcknowledge && String(stored.negativeAcknowledge).trim()) || defaults.negativeAcknowledge,
   };
 }
 

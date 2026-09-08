@@ -473,6 +473,9 @@ function mapReview(row) {
     isRead: !!row.is_read,
     aiFlag: row.ai_flag || null,
     aiIssueId: row.ai_issue_id || null,
+    suspectedFake: !!row.suspected_fake,
+    googleReplyPostedAt: row.google_reply_posted_at || null,
+    googleReplyText: row.google_reply_text || '',
   };
 }
 

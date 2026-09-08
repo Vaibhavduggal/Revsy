@@ -197,4 +197,11 @@
   .messages-layout { grid-template-columns: 1fr; }
   .kanban { grid-template-columns: repeat(2, minmax(220px, 1fr)); }
   .search-input { width: 130px; }
+  .main-content { overflow-x: hidden; }
+}
+
+@media (max-width: 480px) {
+  .topbar { padding: 10px 12px; flex-wrap: wrap; }
+  .search-box { display: none; }
+  .kanban { grid-template-columns: 1fr; }
 }
