@@ -4,7 +4,7 @@ import { useAuth } from '../auth-context.jsx';
 import { Icon, Logo } from '../components/Icons.jsx';
 import GeoAccent from '../components/marketing/GeoAccent.jsx';
 import GoogleSignIn from '../components/GoogleSignIn.jsx';
-import { useToast } from '../components/useToast.jsx';
+import { markOnboardingIntent } from '../utils/onboardingIntent.js';
 
 export default function Login() {
   const { login, demoLogin } = useAuth();
@@ -17,7 +17,10 @@ export default function Login() {
 
   const goAfterLogin = (biz) => {
     if (biz?.onboardingCompleted || biz?.isDemo) navigate('/dashboard');
-    else navigate('/onboarding');
+    else {
+      markOnboardingIntent();
+      navigate('/onboarding');
+    }
   };
 
   const submit = async (e) => {

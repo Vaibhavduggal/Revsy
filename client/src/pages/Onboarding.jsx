@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { api, getToken } from '../api.js';
 import { useToast } from '../components/useToast.jsx';
 import { getCopy } from '../utils/categoryCopy.js';
-import { useAuth } from '../auth-context.jsx';
+import { clearOnboardingIntent, markOnboardingIntent } from '../utils/onboardingIntent.js';
 
 const ONB_STEPS = [
   { n: 1, label: 'Business type' },
@@ -61,7 +61,10 @@ export default function Onboarding() {
       if (s.address) setAddress(s.address);
       if (s.phone) setPhone(s.phone);
       if (s.categorySet && s.category) setCategory(s.category);
-      if (s.onboardingCompleted) nav('/dashboard', { replace: true });
+      if (s.onboardingCompleted) {
+        clearOnboardingIntent();
+        nav('/dashboard', { replace: true });
+      }
       if (s.googleConnected && s.needsLocation) {
         try {
           const loc = await api.googleLocations();
@@ -82,6 +85,7 @@ export default function Onboarding() {
   useEffect(() => {
     const p = new URLSearchParams(window.location.search);
     if (p.get('google') === 'success') {
+      markOnboardingIntent();
       show('Google Business Profile connected!');
       load();
       window.history.replaceState({}, '', '/onboarding');
@@ -115,6 +119,7 @@ export default function Onboarding() {
   const connectGoogle = () => {
     const token = getToken();
     if (!token) return show('Not authenticated');
+    markOnboardingIntent();
     window.location.href = `/api/auth/google?token=${encodeURIComponent(token)}`;
   };
 

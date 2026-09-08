@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../auth-context.jsx';
+import { markOnboardingIntent } from '../utils/onboardingIntent.js';
 import { Logo } from '../components/Icons.jsx';
 import ReviewMotif from '../components/marketing/ReviewMotif.jsx';
 import RupeeCoin from '../components/marketing/RupeeCoin.jsx';
@@ -47,6 +49,7 @@ const INDUSTRIES = [
 
 export default function Landing() {
   const navigate = useNavigate();
+  const { business, ready } = useAuth();
   const heroRef = useRef(null);
   const [navScrolled, setNavScrolled] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -69,6 +72,13 @@ export default function Landing() {
     document.getElementById('loop')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
+  const continueSetup = () => {
+    markOnboardingIntent();
+    navigate('/onboarding');
+  };
+
+  const showContinueSetup = ready && business && business.onboardingCompleted === false && !business.isDemo;
+
   return (
     <div className="mkt">
       <header className={`mkt-nav${navScrolled ? ' mkt-nav--scrolled' : ''}`}>
@@ -89,10 +99,10 @@ export default function Landing() {
           <a href="#restaurants" onClick={() => setMobileOpen(false)}>For Restaurants</a>
           <a href="#gyms" onClick={() => setMobileOpen(false)}>For Gyms</a>
           <button type="button" className="mkt-link-btn" onClick={() => { setMobileOpen(false); navigate('/login'); }}>Sign in</button>
-          <button type="button" className="mkt-btn mkt-btn-primary" onClick={() => { setMobileOpen(false); navigate('/signup'); }}>Get Started</button>
+          <button type="button" className="mkt-btn mkt-btn-primary" onClick={() => { setMobileOpen(false); showContinueSetup ? continueSetup() : navigate('/signup'); }}>Get Started</button>
         </nav>
-        <button type="button" className="mkt-btn mkt-btn-primary mkt-nav-cta" onClick={() => navigate('/signup')}>
-          Get Started
+        <button type="button" className="mkt-btn mkt-btn-primary mkt-nav-cta" onClick={() => (showContinueSetup ? continueSetup() : navigate('/signup'))}>
+          {showContinueSetup ? 'Continue setup' : 'Get Started'}
         </button>
       </header>
 

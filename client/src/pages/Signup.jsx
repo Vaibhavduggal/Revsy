@@ -4,7 +4,7 @@ import { useAuth } from '../auth-context.jsx';
 import { Logo } from '../components/Icons.jsx';
 import GeoAccent from '../components/marketing/GeoAccent.jsx';
 import GoogleSignIn from '../components/GoogleSignIn.jsx';
-import { useToast } from '../components/useToast.jsx';
+import { markOnboardingIntent } from '../utils/onboardingIntent.js';
 
 export default function Signup() {
   const { signup } = useAuth();
@@ -21,6 +21,7 @@ export default function Signup() {
     try {
       const biz = await signup(email, password, businessName);
       show(`Welcome, ${biz.name}! Let's get you set up.`);
+      markOnboardingIntent();
       navigate('/onboarding');
     } catch (err) {
       show(err.message || 'Sign up failed');

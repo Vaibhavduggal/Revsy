@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api, setToken } from '../api.js';
-import { Logo } from '../components/Icons.jsx';
+import { markOnboardingIntent } from '../utils/onboardingIntent.js';
 
 function parseHashTokens() {
   const hash = window.location.hash.replace(/^#/, '');
@@ -47,7 +47,8 @@ export default function AuthCallback() {
         if (directToken) {
           setToken(directToken);
           sessionStorage.removeItem('revsy_google_business_name');
-          const next = query.get('next') || '/onboarding';
+          const next = query.get('next') || '/';
+          if (next.startsWith('/onboarding')) markOnboardingIntent();
           window.location.href = next;
           return;
         }
@@ -75,7 +76,12 @@ export default function AuthCallback() {
         }
 
         if (!cancelled) {
-          navigate(data.business?.onboardingCompleted ? '/dashboard' : '/onboarding', { replace: true });
+          if (data.business?.onboardingCompleted) {
+            navigate('/dashboard', { replace: true });
+          } else {
+            markOnboardingIntent();
+            navigate('/onboarding', { replace: true });
+          }
         }
       } catch (err) {
         if (!cancelled) setError(formatAuthError(err.message, 'error'));

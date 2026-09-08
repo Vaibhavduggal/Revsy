@@ -18,14 +18,18 @@ import Admin from './pages/Admin.jsx';
 import Onboarding from './pages/Onboarding.jsx';
 import AuthCallback from './pages/AuthCallback.jsx';
 import Demo from './pages/Demo.jsx';
+import { markOnboardingIntent, onboardingEntryAllowed, clearOnboardingIntent } from './utils/onboardingIntent.js';
 
 function Protected({ children }) {
   const { business, ready } = useAuth();
   if (!ready) return <div className="empty">Loading…</div>;
   if (!business) return <Navigate to="/login" replace />;
-  // onboarding gate: if not completed and not demo, force to /onboarding
-  if (business.onboardingCompleted === false && !business.isDemo && window.location.pathname !== '/onboarding') {
-    return <Navigate to="/onboarding" replace />;
+  // Incomplete onboarding: send back to marketing home unless actively in setup flow.
+  if (business.onboardingCompleted === false && !business.isDemo) {
+    if (onboardingEntryAllowed()) {
+      return <Navigate to="/onboarding" replace />;
+    }
+    return <Navigate to="/" replace />;
   }
   return (
     <ShellProvider>
@@ -44,6 +48,9 @@ function OnboardingGate({ children }) {
   const { business, ready } = useAuth();
   if (!ready) return <div className="empty">Loading…</div>;
   if (!business) return <Navigate to="/login" replace />;
+  if (!onboardingEntryAllowed()) {
+    return <Navigate to="/" replace />;
+  }
   return children;
 }
 
@@ -52,7 +59,7 @@ function PublicOnly({ children }) {
   if (!ready) return <div className="empty">Loading…</div>;
   if (business) {
     if (business.onboardingCompleted === false && !business.isDemo) {
-      return <Navigate to="/onboarding" replace />;
+      return <Navigate to="/" replace />;
     }
     return <Navigate to="/dashboard" replace />;
   }
