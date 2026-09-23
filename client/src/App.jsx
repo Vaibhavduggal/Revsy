@@ -3,6 +3,7 @@ import { useAuth } from './auth-context.jsx';
 import { useAdminAuth } from './admin-auth-context.jsx';
 import { Sidebar } from './components/Sidebar.jsx';
 import { Topbar } from './components/Topbar.jsx';
+import { MobileBottomNav } from './components/MobileBottomNav.jsx';
 import { ShellProvider } from './components/ShellContext.jsx';
 import Landing from './pages/Landing.jsx';
 import Login from './pages/Login.jsx';
@@ -38,6 +39,7 @@ function Protected({ children }) {
         <div className="main-col">
           <Topbar />
           <main className="main-content">{children}</main>
+          <MobileBottomNav />
         </div>
       </div>
     </ShellProvider>

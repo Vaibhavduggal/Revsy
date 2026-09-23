@@ -1,9 +1,11 @@
 import { useState } from 'react';
+import { Rise } from 'cube-motion/react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth-context.jsx';
 import { Icon, Logo } from '../components/Icons.jsx';
 import GeoAccent from '../components/marketing/GeoAccent.jsx';
 import GoogleSignIn from '../components/GoogleSignIn.jsx';
+import { useToast } from '../components/useToast.jsx';
 import { markOnboardingIntent } from '../utils/onboardingIntent.js';
 
 export default function Login() {
@@ -52,7 +54,7 @@ export default function Login() {
 
   return (
     <div className="editorial-shell" style={{ display: 'grid', placeItems: 'center', padding: 24 }}>
-      <div className="card" style={{ width: '100%', maxWidth: 380 }}>
+      <Rise as="div" className="card glass-card" style={{ width: '100%', maxWidth: 380 }}>
         <div className="brand" style={{ justifyContent: 'center', marginBottom: 8 }}><Logo /><span>Revsy</span></div>
         <p className="editorial-kicker" style={{ justifyContent: 'center', width: '100%' }}><GeoAccent /> Welcome back</p>
         <h2 style={{ textAlign: 'center', fontSize: 28 }}>Business login</h2>
@@ -92,7 +94,7 @@ export default function Login() {
         <div className="csv-hint" style={{ textAlign: 'center', marginTop: 10 }}>
           New gym or restaurant? <a href="/signup">Create an account</a>
         </div>
-      </div>
+      </Rise>
       {node}
     </div>
   );

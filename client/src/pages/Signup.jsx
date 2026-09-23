@@ -1,9 +1,11 @@
 import { useState } from 'react';
+import { Rise } from 'cube-motion/react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../auth-context.jsx';
 import { Logo } from '../components/Icons.jsx';
 import GeoAccent from '../components/marketing/GeoAccent.jsx';
 import GoogleSignIn from '../components/GoogleSignIn.jsx';
+import { useToast } from '../components/useToast.jsx';
 import { markOnboardingIntent } from '../utils/onboardingIntent.js';
 
 export default function Signup() {
@@ -32,7 +34,7 @@ export default function Signup() {
 
   return (
     <div className="editorial-shell" style={{ display: 'grid', placeItems: 'center', padding: 24 }}>
-      <div className="card" style={{ width: '100%', maxWidth: 400 }}>
+      <Rise as="div" className="card glass-card" style={{ width: '100%', maxWidth: 400 }}>
         <div className="brand" style={{ justifyContent: 'center', marginBottom: 8 }}><Logo /><span>Revsy</span></div>
         <p className="editorial-kicker" style={{ justifyContent: 'center', width: '100%' }}><GeoAccent /> Get started</p>
         <h2 style={{ textAlign: 'center', fontSize: 28 }}>Create your account</h2>
@@ -67,7 +69,7 @@ export default function Signup() {
         <div className="csv-hint" style={{ textAlign: 'center', marginTop: 14 }}>
           Already have an account? <Link to="/login" style={{ color: 'var(--accent)', fontWeight: 600 }}>Log in</Link>
         </div>
-      </div>
+      </Rise>
       {node}
     </div>
   );

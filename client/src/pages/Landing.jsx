@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { Rise, Reveal } from 'cube-motion/react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth-context.jsx';
 import { markOnboardingIntent } from '../utils/onboardingIntent.js';
@@ -104,7 +105,7 @@ export default function Landing() {
 
       <section className="mkt-hero" ref={heroRef}>
         <div className="mkt-hero-mesh" aria-hidden="true" />
-        <div className="mkt-container mkt-hero-inner">
+        <Rise as="div" targets="children" className="mkt-container mkt-hero-inner">
           <div className="mkt-hero-copy">
             <p className="editorial-kicker"><DrawGeoAccent /> For restaurants &amp; gyms</p>
             <AnimatedHeadline text="Every review starts with a moment." />
@@ -124,14 +125,14 @@ export default function Landing() {
           <div className="mkt-hero-motif" aria-hidden="true">
             <RupeeCoin size={160} />
           </div>
-        </div>
+        </Rise>
       </section>
 
-      <section className="mkt-trust">
+      <Reveal as="section" className="mkt-trust">
         <div className="mkt-container mkt-trust-inner">
           <p className="mkt-trust-quote">Quietly running behind gyms and restaurants across Punjab.</p>
         </div>
-      </section>
+      </Reveal>
 
       <section className="mkt-loop" id="loop">
         <div className="mkt-container">
@@ -148,7 +149,7 @@ export default function Landing() {
       <section className="mkt-industries">
         <div className="mkt-container">
           <h2 className="mkt-section-title">Built for how you actually operate</h2>
-          <div className="mkt-industry-grid">
+          <Reveal as="div" targets="children" className="mkt-industry-grid">
             {INDUSTRIES.map((ind) => (
               <article key={ind.id} id={ind.id} className="mkt-industry-card mkt-hover-card">
                 <ReviewMotif size={72} className="mkt-motif mkt-motif-sm" />
@@ -156,11 +157,11 @@ export default function Landing() {
                 <p>{ind.body}</p>
               </article>
             ))}
-          </div>
+          </Reveal>
         </div>
       </section>
 
-      <section className="mkt-dark">
+      <Reveal as="section" className="mkt-dark">
         <div className="mkt-container mkt-dark-inner">
           <DrawGeoAccent shape="circle" size={20} className="mkt-dark-accent" />
           <h2>You don&apos;t need another app to manage.</h2>
@@ -172,7 +173,7 @@ export default function Landing() {
             Book a Demo
           </button>
         </div>
-      </section>
+      </Reveal>
 
       <footer className="mkt-footer">
         <div className="mkt-container mkt-footer-grid">

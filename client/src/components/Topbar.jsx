@@ -7,13 +7,22 @@ import { getCopy } from '../utils/categoryCopy.js';
 
 export function Topbar() {
   const { pathname } = useLocation();
-  const { search, setSearch, filterOpen, setFilterOpen, view, setView } = useShell();
+  const { search, setSearch, filterOpen, setFilterOpen, view, setView, mobileNavOpen, setMobileNavOpen } = useShell();
   const { business } = useAuth();
   const copy = getCopy(business?.category);
   const title = getTitle(pathname, copy);
 
   return (
     <header className="topbar">
+      <button
+        type="button"
+        className="icon-btn topbar-menu-btn"
+        aria-label="Open menu"
+        aria-expanded={mobileNavOpen}
+        onClick={() => setMobileNavOpen((v) => !v)}
+      >
+        <Icon.menu width={20} height={20} />
+      </button>
       <div className="breadcrumb">
         <span className="crumb muted">My Business</span>
         <span className="crumb-sep">/</span>

@@ -31,6 +31,7 @@ export const Icon = {
   bell: (p) => (<svg {...base} {...p}><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" /></svg>),
   sparkle: (p) => (<svg {...base} {...p}><path d="M12 3l1.4 4.2L18 8.6l-4.6 1.4L12 14.2l-1.4-4.2L6 8.6l4.6-1.4L12 3z" /><path d="M19 14l.7 2.1L22 16.8l-2.3.7L19 19.6l-.7-2.1L16 16.8l2.3-.7L19 14z" /><path d="M5 15l.6 1.8L7.4 17.4 5.6 18 5 19.8l-.6-1.8L2.6 17.4 4.4 16.8 5 15z" /></svg>),
   trash: (p) => (<svg {...base} {...p}><path d="M3 6h18" /><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6" /><path d="M14 11v6" /></svg>),
+  menu: (p) => (<svg {...base} {...p}><path d="M4 6h16M4 12h16M4 18h16" /></svg>),
 };
 
 export const Logo = ({ emoji = '⭐', label = 'Revsy' }) => (

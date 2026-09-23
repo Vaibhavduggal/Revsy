@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { Reveal } from 'cube-motion/react';
 import { Link } from 'react-router-dom';
 import { api } from '../api.js';
 import { useAuth } from '../auth-context.jsx';
@@ -320,7 +321,7 @@ export default function Dashboard() {
         </div>
       )}
 
-      <div className="stat-grid" style={{ marginBottom: 16 }}>
+      <Reveal as="div" targets="children" className="stat-grid" style={{ marginBottom: 16 }}>
         <div className="stat accent">
           <div className="icon"><Icon.send width={20} height={20} /></div>
           <div className="label">Requests sent</div>
@@ -341,11 +342,20 @@ export default function Dashboard() {
           <div className="label">Unread reviews</div>
           <div className="value">{unreadPos + unreadNeg}</div>
         </div>
-      </div>
+      </Reveal>
 
-      <div style={{ marginBottom: 16 }}>
+      <Reveal as="div" style={{ marginBottom: 16 }}>
         <ReviewTrendChart weeks={chartWeeks} onRefresh={load} />
-      </div>
+      </Reveal>
+
+      <button
+        type="button"
+        className="mobile-fab mobile-fab--visible"
+        aria-label={copy.addPerson}
+        onClick={() => setQuickAddOpen(true)}
+      >
+        <Icon.plus width={24} height={24} />
+      </button>
 
       <div className="row even" style={{ marginBottom: 16, alignItems: 'start' }}>
         <Panel

@@ -2,11 +2,15 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth-context.jsx';
 import { Icon, Logo } from './Icons.jsx';
 import { getCopy } from '../utils/categoryCopy.js';
+import { useShell } from './ShellContext.jsx';
 
 export function Sidebar() {
   const { business, logout } = useAuth();
   const navigate = useNavigate();
+  const { mobileNavOpen, setMobileNavOpen } = useShell() || {};
   const copy = getCopy(business?.category);
+
+  const closeMobile = () => setMobileNavOpen?.(false);
 
   const links = [
     { to: '/dashboard', label: 'Dashboard', icon: Icon.chart },
@@ -18,7 +22,14 @@ export function Sidebar() {
   ];
 
   return (
-    <aside className="sidebar">
+    <>
+      <button
+        type="button"
+        className={`sidebar-backdrop${mobileNavOpen ? ' sidebar-backdrop--open' : ''}`}
+        aria-label="Close navigation"
+        onClick={closeMobile}
+      />
+      <aside className={`sidebar${mobileNavOpen ? ' sidebar--open' : ''}`}>
       <div className="sidebar-brand">
         <Logo emoji={copy.logoEmoji} label={copy.categoryLabel} />
         <div>
@@ -33,6 +44,7 @@ export function Sidebar() {
           <NavLink
             key={l.to}
             to={l.to}
+            onClick={closeMobile}
             className={({ isActive }) => (isActive ? 'side-link active' : 'side-link')}
           >
             <l.icon width={18} height={18} />
@@ -56,5 +68,6 @@ export function Sidebar() {
         </div>
       </div>
     </aside>
+    </>
   );
 }

@@ -7,6 +7,7 @@ export function ShellProvider({ children }) {
   const [sentiment, setSentiment] = useState('all'); // all | positive | negative
   const [view, setView] = useState('comfortable'); // comfortable | compact
   const [filterOpen, setFilterOpen] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   return (
     <ShellContext.Provider value={{
@@ -14,6 +15,7 @@ export function ShellProvider({ children }) {
       sentiment, setSentiment,
       view, setView,
       filterOpen, setFilterOpen,
+      mobileNavOpen, setMobileNavOpen,
     }}>
       {children}
     </ShellContext.Provider>

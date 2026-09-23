@@ -193,7 +193,6 @@
   .kanban { grid-template-columns: repeat(3, minmax(220px, 1fr)); }
 }
 @media (max-width: 860px) {
-  .sidebar { display: none; }
   .messages-layout { grid-template-columns: 1fr; }
   .kanban { grid-template-columns: repeat(2, minmax(220px, 1fr)); }
   .search-input { width: 130px; }
