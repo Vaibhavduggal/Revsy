@@ -5,24 +5,24 @@
   --font-serif: Georgia, 'Times New Roman', serif;
   --color-background: #ffffff;
   --font-serif: 'Fraunces', Georgia, 'Times New Roman', serif;
-  --color-foreground: #1A1A1F;
-  --color-card: #FAFAF8;
-  --color-card-foreground: #1A1A1F;
-  --color-popover: #FAFAF8;
-  --color-popover-foreground: #1A1A1F;
-  --color-primary: #C45C3E;
-  --color-primary-foreground: #FFFBF8;
-  --color-secondary: #f7f8fa;
-  --color-secondary-foreground: #1A1A1F;
-  --color-muted: #f7f8fa;
-  --color-muted-foreground: #6b7280;
-  --color-accent: #FBE8E0;
-  --color-accent-foreground: #9E4528;
+  --color-foreground: #1C1917;
+  --color-card: #FFFBEB;
+  --color-card-foreground: #1C1917;
+  --color-popover: #FFFBEB;
+  --color-popover-foreground: #1C1917;
+  --color-primary: #B45309;
+  --color-primary-foreground: #FFFBEB;
+  --color-secondary: #FEF9EE;
+  --color-secondary-foreground: #1C1917;
+  --color-muted: #FEF9EE;
+  --color-muted-foreground: #78716C;
+  --color-accent: #FEF3C7;
+  --color-accent-foreground: #92400E;
   --color-destructive: #C2705A;
   --color-destructive-foreground: #ffffff;
-  --color-border: #E5E7EB;
-  --color-input: #E5E7EB;
-  --color-ring: #6B6478;
+  --color-border: #E7E5E4;
+  --color-input: #E7E5E4;
+  --color-ring: #D4846A;
   --color-teal-500: #14b8a6;
   --color-pink-500: #ec4899;
   --color-green-500: #16a34a;
@@ -41,10 +41,10 @@
 }
 
 :root {
-  --primary: #C45C3E;
-  --primary-foreground: #FAFAF8;
-  --secondary: #f7f8fa;
-  --secondary-foreground: #1A1A1F;
+  --primary: #B45309;
+  --primary-foreground: #FFFBEB;
+  --secondary: #FEF9EE;
+  --secondary-foreground: #1C1917;
   --ring: #D4846A;
   --destructive-foreground: #ffffff;
   --color-destructive-foreground: #ffffff;

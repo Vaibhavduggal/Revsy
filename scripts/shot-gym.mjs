@@ -35,12 +35,11 @@ const browser = await chromium.launch();
   const page = await ctx.newPage();
   await login(page, 'setup@burngym.com', 'demo123');
   await page.goto(`${BASE}/onboarding`, { waitUntil: 'networkidle' });
-  await page.waitForSelector('[data-testid="category-step"]');
-  await page.click('[data-testid="category-gym"]');
+  await page.waitForSelector('[data-testid="profile-step"]');
   await page.fill('[data-testid="onboarding-address"]', 'Plot No. B-19/186, 3rd-4th Floor, Rani Jhansi Road, Ghumar Mandi, Ludhiana, Punjab 141001');
   await page.fill('[data-testid="onboarding-phone"]', '+91 99887 77999');
   await page.waitForTimeout(400);
-  await shot(page, 'shot-onboarding-category.png');
+  await shot(page, 'shot-onboarding-profile.png');
   await ctx.close();
 }
 

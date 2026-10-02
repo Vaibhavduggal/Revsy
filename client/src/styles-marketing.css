@@ -2,15 +2,15 @@
    Revsy marketing — editorial mesh, serif display, muted plum
    ============================================================ */
 .mkt {
-  --m-ink: #1A1A1F;
-  --m-muted: #5c5c66;
-  --m-line: rgba(26, 26, 31, 0.1);
+  --m-ink: #1C1917;
+  --m-muted: #78716C;
+  --m-line: rgba(28, 25, 23, 0.12);
   --m-bg: transparent;
-  --m-bg-soft: rgba(250, 250, 248, 0.72);
-  --m-accent: #C45C3E;
-  --m-accent-hover: #9E4528;
-  --m-dark: #1A1A1F;
-  --m-motif: #6B6478;
+  --m-bg-soft: rgba(255, 251, 235, 0.78);
+  --m-accent: #B45309;
+  --m-accent-hover: #92400E;
+  --m-dark: #1C1917;
+  --m-motif: #A16207;
   --m-max: 1120px;
   --m-radius: 16px;
   color: var(--m-ink);
@@ -196,6 +196,7 @@
 }
 
 .mkt-nav-cta { flex-shrink: 0; }
+.mkt-nav-cta-mobile { display: none; }
 
 /* Hero — ambient mesh drift */
 .mkt-hero {
@@ -542,6 +543,7 @@
   }
   .mkt-nav-toggle { display: flex; }
   .mkt-nav-cta { display: none; }
+  .mkt-nav-cta-mobile { display: inline-flex; }
   .mkt-nav-links {
     display: none;
     flex-direction: column;

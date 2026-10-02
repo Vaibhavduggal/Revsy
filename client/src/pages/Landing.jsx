@@ -96,7 +96,13 @@ export default function Landing() {
           <a href="#restaurants" onClick={() => setMobileOpen(false)}>For Restaurants</a>
           <a href="#gyms" onClick={() => setMobileOpen(false)}>For Gyms</a>
           <button type="button" className="mkt-link-btn" onClick={() => { setMobileOpen(false); navigate('/login'); }}>Sign in</button>
-          <button type="button" className="mkt-btn mkt-btn-primary" onClick={() => { setMobileOpen(false); showContinueSetup ? continueSetup() : navigate('/signup'); }}>Get Started</button>
+          <button
+            type="button"
+            className="mkt-btn mkt-btn-primary mkt-nav-cta-mobile"
+            onClick={() => { setMobileOpen(false); showContinueSetup ? continueSetup() : navigate('/signup'); }}
+          >
+            {showContinueSetup ? 'Continue setup' : 'Get Started'}
+          </button>
         </nav>
         <button type="button" className="mkt-btn mkt-btn-primary mkt-nav-cta" onClick={() => (showContinueSetup ? continueSetup() : navigate('/signup'))}>
           {showContinueSetup ? 'Continue setup' : 'Get Started'}
