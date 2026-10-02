@@ -1407,7 +1407,7 @@ router.get('/auth/google/callback', async (req, res) => {
 
 router.post('/onboarding/complete', auth, async (req, res) => {
   const b = req.business;
-  if (!b.categorySet) return res.status(400).json({ error: 'Pick gym or restaurant first' });
+  if (!b.categorySet) return res.status(400).json({ error: 'Complete your business profile first' });
   if (!b.googleConnected) return res.status(400).json({ error: 'Google not connected yet' });
   if (b.whatsapp?.status !== 'connected') return res.status(400).json({ error: 'WhatsApp not connected yet' });
   if (b.approvalStatus !== 'approved') return res.status(400).json({ error: 'Waiting for admin approval' });
