@@ -80,6 +80,10 @@ export function sentimentGateMessage(copy, { name, businessName }) {
 
 export function defaultMessageTemplates(category) {
   return {
+    single:
+      'Hi {{customer_name}}! Thanks for {{visit_verb}} {{business_name}} today 🙏\n\n' +
+      'Would you mind leaving us a quick Google review? It really helps:\n{{google_review_link}}\n\n' +
+      'Any suggestions or feedback? Just reply here — the owner reads every message.',
     gate: `Hi {{customer_name}}! Thanks for {{visit_verb}} {{business_name}} today 🙏 How was your experience?\n\n😊 Great!\n😞 Not great`,
     happyFollowup:
       'Awesome to hear! Got any suggestions for us, or should we just say thanks? 🙌\nReply "nothing, you\'re awesome" or tell us what you\'d like to see improved.',
@@ -107,6 +111,7 @@ export function resolveMessageTemplates(business) {
     || (stored.gate && String(stored.gate).trim())
     || defaults.gate;
   return {
+    single: (stored.single && String(stored.single).trim()) || defaults.single,
     gate,
     happyFollowup: (stored.happyFollowup && String(stored.happyFollowup).trim()) || defaults.happyFollowup,
     googleAsk: (stored.googleAsk && String(stored.googleAsk).trim()) || defaults.googleAsk,

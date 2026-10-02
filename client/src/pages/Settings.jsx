@@ -10,7 +10,13 @@ import { renderTemplate } from '../utils/presets.js';
 
 const TEMPLATE_VARS = '{{customer_name}}, {{business_name}}, {{visit_verb}}, {{google_review_link}}';
 
-const TEMPLATE_FIELDS = [
+const SINGLE_TEMPLATE_FIELD = {
+  key: 'single',
+  label: 'Review request message',
+  hint: 'One WhatsApp with your Google link and an invite to reply with suggestions. Replies are clustered in AI insights.',
+};
+
+const MULTI_TEMPLATE_FIELDS = [
   { key: 'gate', label: 'Message 1 — Sentiment gate (sent first)', hint: 'First WhatsApp after a customer is added.' },
   { key: 'happyFollowup', label: 'Message 2a — After 😊 Great!', hint: 'Ask for suggestions or a simple thank-you.' },
   { key: 'googleAsk', label: 'Message 3a — Google review ask', hint: 'Sent when happy and no complaint detected.' },
@@ -22,7 +28,7 @@ const REPLY_TEMPLATE_FIELDS = [
   { key: 'negativeAcknowledge', label: 'Google reply — negative acknowledge', hint: 'Posted when you acknowledge a negative Google review.' },
 ];
 
-const EMPTY_TEMPLATES = { gate: '', happyFollowup: '', googleAsk: '', sadFollowup: '', positiveReply: '', negativeAcknowledge: '' };
+const EMPTY_TEMPLATES = { single: '', gate: '', happyFollowup: '', googleAsk: '', sadFollowup: '', positiveReply: '', negativeAcknowledge: '' };
 
 export default function Settings() {
   const { business, setBusiness } = useAuth();
@@ -36,11 +42,13 @@ export default function Settings() {
     delaySeconds: 1800,
     demoMode: false,
     whatsappCampaignName: '',
-    whatsappBsp: 'AiSensy',
+    whatsappBsp: 'SMSwala',
+    whatsappTemplateId: '',
+    messageFlowMode: 'single',
   });
   const [delayUnit, setDelayUnit] = useState('minutes');
   const [previews, setPreviews] = useState({ ...EMPTY_TEMPLATES });
-  const [previewKey, setPreviewKey] = useState('gate');
+  const [previewKey, setPreviewKey] = useState('single');
   const [effectiveDelay, setEffectiveDelay] = useState(7200);
   const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -56,8 +64,11 @@ export default function Settings() {
         delaySeconds: s.delaySeconds,
         demoMode: s.demoMode,
         whatsappCampaignName: s.whatsappCampaignName || '',
-        whatsappBsp: s.whatsappBsp || 'AiSensy',
+        whatsappBsp: s.whatsappBsp || 'SMSwala',
+        whatsappTemplateId: s.whatsappTemplateId || '',
+        messageFlowMode: s.messageFlowMode === 'multi' ? 'multi' : 'single',
       });
+      setPreviewKey(s.messageFlowMode === 'multi' ? 'gate' : 'single');
       const secs = Number(s.delaySeconds) || 0;
       setDelayUnit(secs >= 3600 && secs % 3600 === 0 ? 'hours' : 'minutes');
       setLoaded(true);
@@ -73,6 +84,7 @@ export default function Settings() {
       category: business?.category,
     };
     setPreviews({
+      single: renderTemplate(form.messageTemplates.single, ctx),
       gate: renderTemplate(form.messageTemplates.gate || form.messageTemplate, ctx),
       happyFollowup: renderTemplate(form.messageTemplates.happyFollowup, ctx),
       googleAsk: renderTemplate(form.messageTemplates.googleAsk, ctx),
@@ -81,7 +93,7 @@ export default function Settings() {
     api.messagePreview().then((p) => {
       setEffectiveDelay(p.effectiveDelay);
     }).catch(() => {});
-  }, [loaded, form.demoMode, form.businessName, form.googleReviewLink, form.messageTemplates, form.messageTemplate, business?.category, business?.name]);
+  }, [loaded, form.demoMode, form.businessName, form.googleReviewLink, form.messageTemplates, form.messageTemplate, form.messageFlowMode, business?.category, business?.name]);
 
   const update = (k, v) => setForm((f) => ({ ...f, [k]: v }));
   const updateTemplate = (key, value) => setForm((f) => ({
@@ -89,6 +101,10 @@ export default function Settings() {
     messageTemplates: { ...f.messageTemplates, [key]: value },
     messageTemplate: key === 'gate' ? value : f.messageTemplate,
   }));
+
+  const isMulti = form.messageFlowMode === 'multi';
+  const templateFields = isMulti ? MULTI_TEMPLATE_FIELDS : [SINGLE_TEMPLATE_FIELD];
+  const previewFields = isMulti ? MULTI_TEMPLATE_FIELDS : [SINGLE_TEMPLATE_FIELD];
 
   const save = async (e) => {
     e.preventDefault();
@@ -111,21 +127,44 @@ export default function Settings() {
       ? `Send immediately ${copy.delayAfterAdd}`
       : `Send after ${Math.round(Number(form.delaySeconds) / 60)} minute(s) (${form.delaySeconds}s) ${copy.delayAfterAdd}`;
 
-  const activePreview = previews[previewKey] || previews.gate || '';
+  const activePreview = previews[previewKey] || previews.single || previews.gate || '';
 
   return (
     <div className="page">
       <div className="page-head">
         <div>
           <h1>Settings</h1>
-          <div className="sub">Branding, review link, sentiment-gate messages and timing.</div>
+          <div className="sub">Review link, WhatsApp (SMSwala), message style, and send timing.</div>
         </div>
       </div>
 
       <div className="row two">
-        <form className="card" onSubmit={save}>
+        <form className="card glass-card" onSubmit={save}>
           <h3>Business & messaging</h3>
-          <div className="sub">Four-message sentiment gate — each step is editable below.</div>
+          <div className="field">
+            <label>WhatsApp message style</label>
+            <div className="flex" style={{ gap: 8, flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                className={`btn sm ${!isMulti ? '' : 'secondary'}`}
+                onClick={() => { update('messageFlowMode', 'single'); setPreviewKey('single'); }}
+              >
+                Single message (default)
+              </button>
+              <button
+                type="button"
+                className={`btn sm ${isMulti ? '' : 'secondary'}`}
+                onClick={() => { update('messageFlowMode', 'multi'); setPreviewKey('gate'); }}
+              >
+                Multi-message gate
+              </button>
+            </div>
+            <span className="csv-hint">
+              {isMulti
+                ? 'Classic 😊/😞 flow with follow-up messages.'
+                : 'One message with Google link; customers reply with suggestions in plain text for AI insights.'}
+            </span>
+          </div>
           <div className="spacer" />
           <div className="field">
             <label>Business name</label>
@@ -135,7 +174,7 @@ export default function Settings() {
             <label>Google Review direct link</label>
             <input className="input" value={form.googleReviewLink} onChange={(e) => update('googleReviewLink', e.target.value)} placeholder="https://g.page/your-business/review" />
           </div>
-          {TEMPLATE_FIELDS.map(({ key, label, hint }) => (
+          {templateFields.map(({ key, label, hint }) => (
             <div className="field" key={key}>
               <label>{label}</label>
               <textarea
@@ -143,7 +182,7 @@ export default function Settings() {
                 value={form.messageTemplates[key] || ''}
                 onChange={(e) => updateTemplate(key, e.target.value)}
                 onFocus={() => setPreviewKey(key)}
-                rows={key === 'gate' ? 5 : 4}
+                rows={key === 'gate' || key === 'single' ? 6 : 4}
               />
               <span className="csv-hint">{hint}</span>
             </div>
@@ -180,9 +219,23 @@ export default function Settings() {
             </select>
           </div>
           <div className="field">
-            <label>WhatsApp campaign name (AiSensy)</label>
-            <input className="input" value={form.whatsappCampaignName} onChange={(e) => update('whatsappCampaignName', e.target.value)} placeholder="Exact live API campaign name" />
-            <span className="csv-hint">Template params sent: {copy.person} name, business name, first question.</span>
+            <label>WhatsApp provider</label>
+            <select className="select" value={form.whatsappBsp} onChange={(e) => update('whatsappBsp', e.target.value)}>
+              <option>SMSwala</option>
+              <option>AiSensy</option>
+              <option>Gupshup</option>
+              <option>Meta Cloud API</option>
+              <option>Other</option>
+            </select>
+          </div>
+          <div className="field">
+            <label>SMSwala template ID</label>
+            <input className="input" value={form.whatsappTemplateId} onChange={(e) => update('whatsappTemplateId', e.target.value)} placeholder="Approved template ID from smswala.in" />
+            <span className="csv-hint">For template-based sends. Session text uses your connected Meta phone number ID from onboarding.</span>
+          </div>
+          <div className="field">
+            <label>Campaign name (optional)</label>
+            <input className="input" value={form.whatsappCampaignName} onChange={(e) => update('whatsappCampaignName', e.target.value)} placeholder="SMSwala / AiSensy campaign label" />
           </div>
           <div className="field">
             <label>Custom delay</label>
@@ -230,13 +283,13 @@ export default function Settings() {
           <button className="btn" type="submit" disabled={saving || !loaded}>{saving ? 'Saving…' : 'Save settings'}</button>
         </form>
 
-        <div className="card" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+        <div className="card glass-card" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
           <h3 style={{ alignSelf: 'flex-start' }}>Live preview</h3>
           <div className="sub" style={{ alignSelf: 'flex-start' }}>
-            {TEMPLATE_FIELDS.find((f) => f.key === previewKey)?.label || 'Message preview'}
+            {previewFields.find((f) => f.key === previewKey)?.label || 'Message preview'}
           </div>
           <div className="flex" style={{ gap: 6, flexWrap: 'wrap', alignSelf: 'flex-start', marginTop: 10 }}>
-            {TEMPLATE_FIELDS.map(({ key, label }) => (
+            {previewFields.map(({ key, label }) => (
               <button
                 key={key}
                 type="button"

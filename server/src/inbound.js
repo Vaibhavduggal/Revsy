@@ -135,13 +135,78 @@ export async function findCustomerForInbound(phone) {
   return active || matches[0];
 }
 
+async function handleSingleMessageInbound(business, customer, text, { skipSend, templates, history }) {
+  const trimmed = String(text || '').trim();
+  if (!trimmed) {
+    await persistCustomer(customer.id, { wa_step: 'awaiting_single_reply', stage: 'opened' }, history);
+    return { step: 'awaiting_single_reply', replies: [], history };
+  }
+
+  const sentiment = detectSentimentReply(trimmed);
+  const negative = sentiment === 'negative' || /\b(bad|terrible|awful|worst|disappoint|angry|refund|never again)\b/i.test(trimmed);
+
+  if (negative) {
+    const fb = await saveFeedback({ business, customer, text: trimmed, type: 'complaint' });
+    await persistCustomer(customer.id, {
+      wa_step: 'done',
+      stage: 'negative',
+      sentiment: 'negative',
+      complaint: trimmed,
+    }, history);
+    await recordActivity(business.id, {
+      type: 'complaint',
+      customerName: customer.name,
+      phone: customer.phone,
+      message: trimmed,
+      status: 'Complaint',
+    });
+    await feedComplaintToAi(business, customer, trimmed, fb.id);
+    const thanks = 'Thank you — your feedback was sent to the owner privately. We\'ll work on fixing this.';
+    if (!skipSend) await deliver(business, { phone: customer.phone, message: thanks, customerName: customer.name });
+    return { step: 'done', sentiment: 'negative', complaint: fb, replies: [thanks], history };
+  }
+
+  const fb = await saveFeedback({ business, customer, text: trimmed, type: 'suggestion' });
+  await persistCustomer(customer.id, {
+    wa_step: 'done',
+    stage: 'positive',
+    sentiment: 'positive',
+    complaint: trimmed,
+  }, history);
+  await recordActivity(business.id, {
+    type: 'suggestion',
+    customerName: customer.name,
+    phone: customer.phone,
+    message: trimmed,
+    status: 'Suggestion',
+  });
+  await feedSuggestionToAi(business, customer, trimmed, fb.id);
+  const thanks = SUGGESTION_THANKS;
+  if (!skipSend) await deliver(business, { phone: customer.phone, message: thanks, customerName: customer.name });
+  return { step: 'done', sentiment: 'positive', suggestion: fb, replies: [thanks], history };
+}
+
 export async function handleCustomerInbound(business, customer, text, { skipSend = false } = {}) {
   const copy = getCopy(business.category);
   const templates = resolveMessageTemplates(business);
   const history = historyOf(customer);
   history.push({ from: 'customer', type: 'text', text, at: new Date().toISOString() });
 
+  const flowMode = business.messageFlowMode || 'single';
   let step = customer.waStep || 'idle';
+  if (flowMode === 'single') {
+    if (step === 'idle' && (customer.stage === 'sent' || customer.stage === 'opened' || customer.stage === 'to_send')) {
+      step = 'awaiting_single_reply';
+    }
+    if (step === 'awaiting_single_reply' || step === 'idle' || step === 'done') {
+      if (step === 'done') {
+        await persistCustomer(customer.id, {}, history);
+        return { step: 'done', ignored: true, replies: [], history };
+      }
+      return handleSingleMessageInbound(business, customer, text, { skipSend, templates, history });
+    }
+  }
+
   if (step === 'idle' && (customer.stage === 'sent' || customer.stage === 'opened' || customer.stage === 'to_send')) {
     step = 'awaiting_sentiment';
   }

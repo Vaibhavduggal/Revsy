@@ -60,10 +60,12 @@ async function processRow(row) {
 
   try {
     if (!business) throw new Error('Business not found for pending send');
+    const flowMode = business.messageFlowMode || 'single';
     await sendBusinessWhatsApp(business, {
       phone: row.phone,
       message: row.message,
       customerName: customer?.name,
+      session: flowMode === 'single',
     });
     // Update pending_sends row
     await db.from('pending_sends').update({
@@ -96,7 +98,11 @@ async function processRow(row) {
         last_request_at: new Date().toISOString(),
         last_request_status: 'Sent',
         wa_delivery_status: 'sent',
-        wa_step: customer.waStep === 'idle' ? 'awaiting_sentiment' : customer.waStep,
+        wa_step: (() => {
+          const flow = business.messageFlowMode || 'single';
+          if (customer.waStep !== 'idle') return customer.waStep;
+          return flow === 'multi' ? 'awaiting_sentiment' : 'awaiting_single_reply';
+        })(),
         wa_history: history,
       }).eq('id', customer.id);
     }

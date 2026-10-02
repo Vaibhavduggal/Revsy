@@ -400,6 +400,7 @@ function mapBusiness(row) {
       apiKey: row.whatsapp_api_key || '',
       phoneNumberId: row.whatsapp_phone_number_id || '',
       campaignName: row.whatsapp_campaign_name || (row.whatsapp_bsp || '').split('::')[1] || '',
+      templateId: row.whatsapp_template_id || '',
       status: row.whatsapp_status || 'not_connected',
     },
     reviewsReceived: row.reviews_received || 0,
@@ -417,6 +418,7 @@ function mapBusiness(row) {
     rejectedAt: row.rejected_at || null,
     category: row.category === 'gym' ? 'gym' : 'restaurant',
     categorySet: !!row.category_set,
+    messageFlowMode: row.message_flow_mode === 'multi' ? 'multi' : 'single',
   };
 }
 

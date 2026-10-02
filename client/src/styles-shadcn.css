@@ -10,14 +10,14 @@
   --color-card-foreground: #1A1A1F;
   --color-popover: #FAFAF8;
   --color-popover-foreground: #1A1A1F;
-  --color-primary: #6B6478;
-  --color-primary-foreground: #FAFAF8;
+  --color-primary: #C45C3E;
+  --color-primary-foreground: #FFFBF8;
   --color-secondary: #f7f8fa;
   --color-secondary-foreground: #1A1A1F;
   --color-muted: #f7f8fa;
   --color-muted-foreground: #6b7280;
-  --color-accent: #EDEAF0;
-  --color-accent-foreground: #534E5E;
+  --color-accent: #FBE8E0;
+  --color-accent-foreground: #9E4528;
   --color-destructive: #C2705A;
   --color-destructive-foreground: #ffffff;
   --color-border: #E5E7EB;
@@ -41,11 +41,11 @@
 }
 
 :root {
-  --primary: #6B6478;
+  --primary: #C45C3E;
   --primary-foreground: #FAFAF8;
   --secondary: #f7f8fa;
   --secondary-foreground: #1A1A1F;
-  --ring: #6B6478;
+  --ring: #D4846A;
   --destructive-foreground: #ffffff;
   --color-destructive-foreground: #ffffff;
 }

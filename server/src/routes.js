@@ -96,9 +96,10 @@ export const MESSAGE_PRESETS = messagePresetsFor('restaurant');
 
 export function render(business, customer) {
   const templates = resolveMessageTemplates(business);
+  const flow = business.messageFlowMode || 'single';
   const template = (customer && customer.customMessage && customer.customMessage.trim())
     ? customer.customMessage
-    : templates.gate;
+    : (flow === 'multi' ? templates.gate : templates.single);
   return renderBusinessTemplate(template, business, customer);
 }
 
@@ -1192,20 +1193,25 @@ router.get('/settings', auth, (req, res) => {
     categorySet: !!b.categorySet,
     address: b.address || '',
     phone: b.phone || '',
+    messageFlowMode: b.messageFlowMode || 'single',
+    whatsappTemplateId: b.whatsapp?.templateId || '',
   });
 });
 
 router.put('/settings', auth, async (req, res) => {
   const db = getDb();
   const b = req.business;
-  const { businessName, googleReviewLink, feedbackLink, messageTemplate, messageTemplates, delaySeconds, demoMode, placeId, whatsappCampaignName, whatsappBsp, category } = req.body || {};
+  const {
+    businessName, googleReviewLink, feedbackLink, messageTemplate, messageTemplates, delaySeconds, demoMode, placeId,
+    whatsappCampaignName, whatsappBsp, whatsappTemplateId, messageFlowMode, category,
+  } = req.body || {};
   const updates = {};
   if (typeof businessName === 'string' && businessName.trim()) updates.name = businessName.trim();
   if (typeof googleReviewLink === 'string') updates.google_review_link = googleReviewLink.trim();
   if (typeof feedbackLink === 'string') updates.feedback_link = feedbackLink.trim();
   const templatesPatch = { ...(b.messageTemplates || {}) };
   if (messageTemplates && typeof messageTemplates === 'object') {
-    for (const key of ['gate', 'happyFollowup', 'googleAsk', 'sadFollowup', 'positiveReply', 'negativeAcknowledge']) {
+    for (const key of ['single', 'gate', 'happyFollowup', 'googleAsk', 'sadFollowup', 'positiveReply', 'negativeAcknowledge']) {
       if (typeof messageTemplates[key] === 'string' && messageTemplates[key].trim()) {
         templatesPatch[key] = messageTemplates[key].trim();
       }
@@ -1225,8 +1231,14 @@ router.put('/settings', auth, async (req, res) => {
     updates.category = category;
     updates.category_set = true;
   }
+  if (messageFlowMode === 'single' || messageFlowMode === 'multi') {
+    updates.message_flow_mode = messageFlowMode;
+  }
+  if (typeof whatsappTemplateId === 'string') {
+    updates.whatsapp_template_id = whatsappTemplateId.trim();
+  }
   if (typeof whatsappCampaignName === 'string' || typeof whatsappBsp === 'string') {
-    const bsp = (typeof whatsappBsp === 'string' && whatsappBsp.trim()) ? whatsappBsp.trim() : (b.whatsapp?.bsp || 'AiSensy');
+    const bsp = (typeof whatsappBsp === 'string' && whatsappBsp.trim()) ? whatsappBsp.trim() : (b.whatsapp?.bsp || 'SMSwala');
     const campaign = typeof whatsappCampaignName === 'string' ? whatsappCampaignName.trim() : (b.whatsapp?.campaignName || '');
     updates.whatsapp_bsp = campaign ? `${bsp}::${campaign}` : bsp;
   }
@@ -1245,6 +1257,8 @@ router.put('/settings', auth, async (req, res) => {
     placeId: updated.placeId || '',
     whatsappStatus: updated.whatsapp?.status || 'not_connected',
     whatsappBsp: updated.whatsapp?.bsp || '',
+    messageFlowMode: updated.messageFlowMode || 'single',
+    whatsappTemplateId: updated.whatsapp?.templateId || '',
   });
 });
 
@@ -1252,9 +1266,11 @@ router.get('/message-preview', auth, (req, res) => {
   const b = req.business;
   const templates = resolveMessageTemplates(b);
   const sampleCustomer = { name: 'Rahul Sharma' };
+  const primary = (b.messageFlowMode || 'single') === 'multi' ? templates.gate : templates.single;
   res.json({
-    message: renderBusinessTemplate(templates.gate, b, sampleCustomer),
+    message: renderBusinessTemplate(primary, b, sampleCustomer),
     previews: {
+      single: renderBusinessTemplate(templates.single, b, sampleCustomer),
       gate: renderBusinessTemplate(templates.gate, b, sampleCustomer),
       happyFollowup: renderBusinessTemplate(templates.happyFollowup, b, sampleCustomer),
       googleAsk: renderBusinessTemplate(templates.googleAsk, b, sampleCustomer),
@@ -1288,15 +1304,15 @@ router.get('/onboarding/status', auth, async (req, res) => {
 
 router.post('/onboarding/profile', auth, async (req, res) => {
   const db = getDb();
-  const { category, name, address, phone } = req.body || {};
-  const cat = normalizeCategory(category);
-  if (!['gym', 'restaurant'].includes(String(category || '').toLowerCase())) {
-    return res.status(400).json({ error: 'Pick gym or restaurant' });
-  }
+  const { name, address, phone } = req.body || {};
+  const cat = 'restaurant';
+  const templates = defaultMessageTemplates(cat);
   const updates = {
     category: cat,
     category_set: true,
-    message_template: defaultTemplateFor(cat),
+    message_template: templates.single,
+    message_templates: templates,
+    message_flow_mode: 'single',
   };
   if (typeof name === 'string' && name.trim()) updates.name = name.trim();
   if (typeof address === 'string') updates.address = address.trim();
@@ -1308,15 +1324,17 @@ router.post('/onboarding/profile', auth, async (req, res) => {
 
 router.post('/onboarding/whatsapp', auth, async (req, res) => {
   const db = getDb();
-  const { apiKey, phoneNumberId, provider, campaignName } = req.body || {};
+  const { apiKey, phoneNumberId, provider, campaignName, templateId } = req.body || {};
   if (!apiKey || !String(apiKey).trim()) return res.status(400).json({ error: 'WhatsApp API key is required' });
-  const bsp = provider ? String(provider).trim() : 'AiSensy';
-  await db.from('businesses').update({
+  const bsp = provider ? String(provider).trim() : 'SMSwala';
+  const patch = {
     whatsapp_api_key: String(apiKey).trim(),
     whatsapp_bsp: campaignName ? `${bsp}::${campaignName}` : bsp,
     whatsapp_phone_number_id: phoneNumberId ? String(phoneNumberId).trim() : '',
     whatsapp_status: 'connected',
-  }).eq('id', req.business.id);
+  };
+  if (typeof templateId === 'string') patch.whatsapp_template_id = templateId.trim();
+  await db.from('businesses').update(patch).eq('id', req.business.id);
   const updated = await getBusiness(req.business.id);
   const isApproved = updated.approvalStatus === 'approved';
   if (updated.googleConnected && updated.whatsapp.status === 'connected' && isApproved) {
