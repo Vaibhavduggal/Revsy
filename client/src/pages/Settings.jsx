@@ -24,7 +24,7 @@ const MULTI_TEMPLATE_FIELDS = [
 ];
 
 const REPLY_TEMPLATE_FIELDS = [
-  { key: 'positiveReply', label: 'Google reply — positive review', hint: 'Posted when you mark a positive Google review as read.' },
+  { key: 'positiveReply', label: 'Google thank-you — positive review', hint: 'Posted automatically when a new 4★+ Google review is synced. Use {{customer_name}} and {{business_name}}.' },
   { key: 'negativeAcknowledge', label: 'Google reply — negative acknowledge', hint: 'Posted when you acknowledge a negative Google review.' },
 ];
 
@@ -189,7 +189,7 @@ export default function Settings() {
           ))}
           <div className="divider" />
           <h3 style={{ fontSize: 15, marginBottom: 4 }}>Google review auto-replies</h3>
-          <div className="sub" style={{ marginBottom: 12 }}>Posted on your behalf when you mark reviews read from the dashboard.</div>
+          <div className="sub" style={{ marginBottom: 12 }}>Positive reviews get an automatic thank-you on Google when they sync. Negative reviews still use Acknowledge from the dashboard.</div>
           {REPLY_TEMPLATE_FIELDS.map(({ key, label, hint }) => (
             <div className="field" key={key}>
               <label>{label}</label>

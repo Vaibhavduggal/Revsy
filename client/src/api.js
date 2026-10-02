@@ -84,6 +84,7 @@ export const api = {
   retrySend: (id) => request('POST', `/pending-sends/${id}/retry`),
   reviewsAll: (page) => request('GET', `/reviews/all?page=${page||1}`),
   markReviewRead: (id) => request('POST', `/reviews/${id}/read`),
+  sendReviewThankYou: (id) => request('POST', `/reviews/${id}/thank-you`),
   acknowledgeReview: (id) => request('POST', `/reviews/${id}/acknowledge`),
   flagReviewFake: (id) => request('POST', `/reviews/${id}/flag-fake`),
   replyAudit: () => request('GET', '/reviews/reply-audit'),

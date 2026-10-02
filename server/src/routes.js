@@ -4,7 +4,8 @@ import { getDb, getBusiness, renderTemplate, hashPassword, verifyPassword, newTo
 import { auth, adminAuth, recordActivity, publicBusiness } from './auth.js';
 import { enqueueSend, retrySend, getFailedSends, processDueSends } from './queue.js';
 import { classifyOneReview, weeklyUpdateBusiness, getCurrentSummaryRow, issuesFromRow, runFirstClusteringForBusiness } from './ai.js';
-import { listGoogleLocations, saveSelectedLocation, autoSelectLocationIfSingle, syncGoogleReviewsForBusiness, postGoogleReviewReply, googleReviewReportUrl } from './google.js';
+import { listGoogleLocations, saveSelectedLocation, autoSelectLocationIfSingle, syncGoogleReviewsForBusiness, googleReviewReportUrl } from './google.js';
+import { postReviewReplyIfGoogle } from './reviewReplies.js';
 import { buildSupabaseGoogleAuthUrl, getPublicSupabaseConfig, signOAuthState, verifyOAuthState, verifySupabaseAccessToken } from './supabase-auth.js';
 import { getCopy, defaultTemplateFor, defaultMessageTemplates, messagePresetsFor, normalizeCategory, renderBusinessTemplate, resolveMessageTemplates } from './categoryCopy.js';
 import { resolveFrontendUrl, resolveGoogleRedirectUri, buildGoogleAuthUrl, googleClientId, googleClientSecret, GOOGLE_SIGNIN_SCOPES, GOOGLE_BUSINESS_SCOPES, googleAccessDeniedMessage } from './oauth-urls.js';
@@ -39,57 +40,6 @@ function triggerInitialInsights(businessId) {
       console.error('initial AI insights failed (retry on cron):', e.message);
     }
   })();
-}
-
-async function logReplyAudit(db, payload) {
-  await db.from('review_reply_audit').insert({
-    id: newId('rpa'),
-    business_id: payload.businessId,
-    review_id: payload.reviewId,
-    action: payload.action,
-    template_key: payload.templateKey || null,
-    reply_text: payload.replyText || '',
-    google_review_id: payload.googleReviewId || null,
-    success: !!payload.success,
-    error_message: payload.errorMessage || null,
-    posted_at: new Date().toISOString(),
-  });
-}
-
-async function postReviewReplyIfGoogle(business, reviewRow, replyText, templateKey, action) {
-  const db = getDb();
-  let googlePosted = false;
-  let googleError = null;
-
-  if (reviewRow.source === 'google' && business.googleConnected && !business.isDemo && reviewRow.google_review_id) {
-    try {
-      await postGoogleReviewReply(business, reviewRow.google_review_id, replyText);
-      googlePosted = true;
-    } catch (e) {
-      googleError = e.message;
-      console.error('Google review reply failed:', e.message);
-    }
-  }
-
-  const updates = { is_read: true };
-  if (googlePosted) {
-    updates.google_reply_posted_at = new Date().toISOString();
-    updates.google_reply_text = replyText;
-  }
-  await db.from('reviews').update(updates).eq('id', reviewRow.id).eq('business_id', business.id);
-
-  await logReplyAudit(db, {
-    businessId: business.id,
-    reviewId: reviewRow.id,
-    action,
-    templateKey,
-    replyText,
-    googleReviewId: reviewRow.google_review_id,
-    success: googlePosted || reviewRow.source !== 'google' || business.isDemo,
-    errorMessage: googleError,
-  });
-
-  return { googlePosted, googleError };
 }
 
 export const MESSAGE_PRESETS = messagePresetsFor('restaurant');
@@ -862,6 +812,7 @@ router.get('/reviews/list', auth, async (req, res) => {
   const positive = reviews.filter((r) => (r.rating || 5) >= 4).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).map((r) => ({
     id: r.id, customerName: r.customerName || 'Anonymous', rating: r.rating, text: r.text || '', source: r.source || 'internal',
     createdAt: r.createdAt, isRead: !!r.isRead, suspectedFake: !!r.suspectedFake, googleReplyPostedAt: r.googleReplyPostedAt || null,
+    positiveAiSummary: r.positiveAiSummary || null,
   }));
   const negativeFromReviews = reviews.filter((r) => (r.rating || 5) < 4).map((r) => ({
     id: r.id, customerName: r.customerName || 'Anonymous', rating: r.rating, text: r.text || '', source: r.source || 'google',
@@ -908,14 +859,27 @@ router.post('/reviews/:id/read', auth, async (req, res) => {
     return res.status(400).json({ error: 'Use Acknowledge or Flag for negative reviews' });
   }
 
-  const templates = resolveMessageTemplates(biz);
-  const replyText = renderBusinessTemplate(templates.positiveReply, biz, { name: row.customer_name });
-  const { googlePosted, googleError } = await postReviewReplyIfGoogle(biz, row, replyText, 'positiveReply', 'positive_reply');
+  await db.from('reviews').update({ is_read: true }).eq('id', row.id).eq('business_id', biz.id);
+  res.json({
+    ok: true,
+    googleReplyPosted: !!row.google_reply_posted_at,
+    autoThankYou: true,
+  });
+});
 
-  if (googleError && row.source === 'google' && !biz.isDemo) {
-    return res.json({ ok: true, googleReplyPosted: false, warning: `Marked read but Google reply failed: ${googleError}` });
+router.post('/reviews/:id/thank-you', auth, async (req, res) => {
+  const db = getDb();
+  const biz = req.business;
+  const { data: row } = await db.from('reviews').select('*').eq('id', req.params.id).eq('business_id', biz.id).single();
+  if (!row) return res.status(404).json({ error: 'Review not found' });
+  if ((row.rating || 5) < 4) return res.status(400).json({ error: 'Thank-you replies are only for positive reviews' });
+
+  const { processNewPositiveGoogleReview } = await import('./ai.js');
+  const result = await processNewPositiveGoogleReview(biz, row);
+  if (result.googleError && row.source === 'google' && !biz.isDemo) {
+    return res.json({ ok: false, googleReplyPosted: false, warning: result.googleError });
   }
-  res.json({ ok: true, googleReplyPosted: googlePosted });
+  res.json({ ok: true, googleReplyPosted: !!result.googlePosted });
 });
 
 router.post('/reviews/:id/acknowledge', auth, async (req, res) => {

@@ -216,6 +216,7 @@ export async function syncGoogleReviewsForBusiness(business, { classifyNegative 
   const recent = googleReviews.filter((r) => new Date(r.createdAt) >= since);
   let added = 0;
   const newNegatives = [];
+  const newPositives = [];
 
   for (const gr of recent) {
     if (!gr.googleReviewId) continue;
@@ -243,6 +244,8 @@ export async function syncGoogleReviewsForBusiness(business, { classifyNegative 
     added++;
     if (gr.rating > 0 && gr.rating < 4) {
       newNegatives.push({ id: newRevId, rating: gr.rating, text: gr.text || '' });
+    } else if (gr.rating >= 4) {
+      newPositives.push(row);
     }
   }
 
@@ -254,6 +257,31 @@ export async function syncGoogleReviewsForBusiness(business, { classifyNegative 
       try { await classifyNegative(business.id, n); } catch (e) {
         console.error('immediate AI classify failed (retry on cron):', e.message);
       }
+    }
+  }
+
+  const { processNewPositiveGoogleReview } = await import('./ai.js');
+  for (const p of newPositives) {
+    try {
+      await processNewPositiveGoogleReview(business, p);
+    } catch (e) {
+      console.error('positive review auto-thank failed (retry on next sync):', e.message);
+    }
+  }
+
+  const { data: pendingPositive } = await db.from('reviews').select('*')
+    .eq('business_id', business.id)
+    .eq('source', 'google')
+    .gte('rating', 4)
+    .is('google_reply_posted_at', null)
+    .eq('suspected_fake', false)
+    .limit(25);
+  for (const row of pendingPositive || []) {
+    if (newPositives.some((p) => p.id === row.id)) continue;
+    try {
+      await processNewPositiveGoogleReview(business, row);
+    } catch (e) {
+      console.error('positive review backlog auto-thank failed:', e.message);
     }
   }
 

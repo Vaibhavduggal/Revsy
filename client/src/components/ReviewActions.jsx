@@ -7,9 +7,11 @@ export default function ReviewActions({
   onMarkRead,
   onAcknowledge,
   onFlagFake,
+  onRetryThankYou,
 }) {
   const unread = review.isRead === false;
   const isGoogle = review.source === 'google' && review.id && !String(review.id).startsWith('fb_');
+  const positive = !negative && (review.rating || 5) >= 4;
 
   if (review.suspectedFake) {
     return (
@@ -24,11 +26,30 @@ export default function ReviewActions({
     );
   }
 
+  if (positive && isGoogle && review.googleReplyPostedAt) {
+    return <span className="csv-hint">Thank-you sent on Google</span>;
+  }
+
   if (!unread || !review.id || String(review.id).startsWith('fb_')) {
     if (review.googleReplyPostedAt) {
-      return <span className="csv-hint">Replied on Google</span>;
+      return <span className="csv-hint">Thank-you sent on Google</span>;
     }
     return null;
+  }
+
+  if (positive && isGoogle) {
+    return (
+      <div className="review-actions">
+        {!review.googleReplyPostedAt && onRetryThankYou && (
+          <button type="button" className="btn sm touch-target" disabled={busy} onClick={() => onRetryThankYou(review.id)}>
+            Retry thank-you
+          </button>
+        )}
+        <button type="button" className="btn ghost sm touch-target" disabled={busy} onClick={() => onMarkRead(review.id)}>
+          Dismiss
+        </button>
+      </div>
+    );
   }
 
   if (negative && isGoogle) {
@@ -46,7 +67,7 @@ export default function ReviewActions({
 
   return (
     <button type="button" className="btn ghost sm touch-target" disabled={busy} onClick={() => onMarkRead(review.id)}>
-      Mark read{isGoogle ? ' & reply' : ''}
+      Dismiss
     </button>
   );
 }

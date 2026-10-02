@@ -478,6 +478,7 @@ function mapReview(row) {
     suspectedFake: !!row.suspected_fake,
     googleReplyPostedAt: row.google_reply_posted_at || null,
     googleReplyText: row.google_reply_text || '',
+    positiveAiSummary: row.positive_ai_summary || null,
   };
 }
 

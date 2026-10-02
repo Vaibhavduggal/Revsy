@@ -72,6 +72,48 @@ async function geminiChat(prompt, { maxTokens = 2000 } = {}) {
   throw lastErr || new Error('Gemini request failed');
 }
 
+async function geminiPlain(prompt, { maxTokens = 400 } = {}) {
+  const key = geminiKey();
+  if (!key) throw new Error('GEMINI_API_KEY not configured');
+  let lastErr = null;
+  for (const model of GEMINI_MODELS) {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(key)}`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        generationConfig: { temperature: 0.3, maxOutputTokens: maxTokens },
+      }),
+    });
+    const text = await res.text();
+    if (!res.ok) {
+      lastErr = new Error(`Gemini ${res.status} (${model}): ${text.slice(0, 300)}`);
+      continue;
+    }
+    const data = JSON.parse(text);
+    const content = data.candidates?.[0]?.content?.parts?.map((p) => p.text).join('') || '';
+    if (content) return content.trim();
+    lastErr = new Error(`Gemini ${model} returned empty content`);
+  }
+  throw lastErr || new Error('Gemini request failed');
+}
+
+async function llmPlain(prompt, { maxTokens = 400 } = {}) {
+  const prefer = (process.env.AI_PROVIDER || 'gemini').toLowerCase();
+  const errors = [];
+  if (prefer !== 'groq' && geminiKey()) {
+    try { return await geminiPlain(prompt, { maxTokens }); } catch (e) { errors.push(e.message); }
+  }
+  if (groqKey()) {
+    try {
+      const out = await groqChat([{ role: 'user', content: prompt }], { json: false, maxTokens });
+      return String(out).trim();
+    } catch (e) { errors.push(e.message); }
+  }
+  throw new Error(errors.join(' | ') || 'No AI provider configured.');
+}
+
 async function llmJson(prompt, { maxTokens = 2000 } = {}) {
   const prefer = (process.env.AI_PROVIDER || 'gemini').toLowerCase();
   const tryGemini = prefer !== 'groq';
@@ -362,4 +404,61 @@ export async function runFirstClusteringForBusiness(businessId) {
       });
     }
   }
+}
+
+function fallbackPositiveSummary(review) {
+  const rating = review.rating || 5;
+  const name = review.customer_name || review.customerName || 'A customer';
+  const text = String(review.text || '').trim();
+  if (!text) return `${name} left a ${rating}-star rating with no written comment.`;
+  const snippet = text.length > 120 ? `${text.slice(0, 117)}…` : text;
+  return `${name} praised: “${snippet}”`;
+}
+
+/** Short owner-facing summary for 4★+ Google reviews. */
+export async function summarizePositiveReview(businessId, review) {
+  const db = getDb();
+  const reviewId = review.id;
+  if (!reviewId) return null;
+
+  const { data: existing } = await db.from('reviews').select('positive_ai_summary').eq('id', reviewId).maybeSingle();
+  if (existing?.positive_ai_summary) return existing.positive_ai_summary;
+
+  const text = String(review.text || '').trim();
+  const name = review.customer_name || review.customerName || 'Guest';
+  const rating = review.rating || 5;
+  let summary;
+
+  if (!text) {
+    summary = fallbackPositiveSummary({ ...review, customer_name: name });
+  } else {
+    const { data: bizRow } = await db.from('businesses').select('category').eq('id', businessId).maybeSingle();
+    const biz = bizRow?.category === 'gym' ? 'gym' : 'restaurant';
+    const prompt = `You write ultra-short summaries for a ${biz} owner dashboard.
+
+Summarize what this happy customer loved in 1-2 sentences (max 220 characters). Be specific. No greeting, no quotes around the whole text.
+
+Reviewer: ${name}
+Rating: ${rating}/5
+Review: ${text.slice(0, 900)}
+
+Return ONLY plain text.`;
+    try {
+      summary = (await llmPlain(prompt, { maxTokens: 200 })).slice(0, 280);
+    } catch (e) {
+      console.error('summarizePositiveReview failed:', e.message);
+      summary = fallbackPositiveSummary({ ...review, customer_name: name });
+    }
+  }
+
+  await db.from('reviews').update({ positive_ai_summary: summary }).eq('id', reviewId).eq('business_id', businessId);
+  return summary;
+}
+
+export async function processNewPositiveGoogleReview(business, reviewRow) {
+  await summarizePositiveReview(business.id, reviewRow);
+  const { autoThankPositiveGoogleReview } = await import('./reviewReplies.js');
+  const result = await autoThankPositiveGoogleReview(business, reviewRow);
+  const { data: fresh } = await getDb().from('reviews').select('google_reply_posted_at').eq('id', reviewRow.id).maybeSingle();
+  return { ...result, googlePosted: !!fresh?.google_reply_posted_at };
 }

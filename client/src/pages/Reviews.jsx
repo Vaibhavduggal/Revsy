@@ -42,7 +42,7 @@ export default function Reviews() {
       const r = await api.markReviewRead(id);
       patchReview(id, { isRead: true, googleReplyPostedAt: r.googleReplyPosted ? new Date().toISOString() : null });
       if (r.warning) show(r.warning);
-      else show(r.googleReplyPosted ? 'Thank-you reply posted on Google' : 'Marked as read');
+      else show('Dismissed');
     } catch (e) { show(e.message); }
     finally { setBusy(null); }
   };
@@ -54,6 +54,21 @@ export default function Reviews() {
       patchReview(id, { isRead: true, googleReplyPostedAt: r.googleReplyPosted ? new Date().toISOString() : null });
       if (r.warning) show(r.warning);
       else show(r.googleReplyPosted ? 'Acknowledgement posted on Google' : 'Review acknowledged');
+    } catch (e) { show(e.message); }
+    finally { setBusy(null); }
+  };
+
+  const retryThankYou = async (id) => {
+    setBusy(id);
+    try {
+      const r = await api.sendReviewThankYou(id);
+      patchReview(id, {
+        isRead: true,
+        googleReplyPostedAt: r.googleReplyPosted ? new Date().toISOString() : null,
+      });
+      if (r.warning) show(r.warning);
+      else if (r.googleReplyPosted) show('Thank-you posted on Google');
+      else show('Could not post thank-you — try syncing Google reviews again');
     } catch (e) { show(e.message); }
     finally { setBusy(null); }
   };
@@ -92,6 +107,12 @@ export default function Reviews() {
                     <span className="csv-hint">{new Date(r.createdAt).toLocaleString()} · {r.source}</span>
                   </div>
                   {r.text && <div className="muted" style={{ marginTop: 6 }}>{r.text}</div>}
+                  {!negative && r.positiveAiSummary && (
+                    <div style={{ fontSize: 12, marginTop: 8, padding: '8px 10px', borderRadius: 8, background: 'var(--ok-soft)' }}>
+                      <span style={{ fontWeight: 700, fontSize: 11, textTransform: 'uppercase', color: 'var(--ok)' }}>AI summary</span>
+                      <div style={{ marginTop: 4 }}>{r.positiveAiSummary}</div>
+                    </div>
+                  )}
                   <div className="flex between wrap" style={{ marginTop: 8, gap: 8 }}>
                     <span>
                       {r.suspectedFake && <span className="badge warn sm">Suspected fake</span>}
@@ -106,6 +127,7 @@ export default function Reviews() {
                       onMarkRead={markRead}
                       onAcknowledge={acknowledgeReview}
                       onFlagFake={flagFake}
+                      onRetryThankYou={retryThankYou}
                     />
                   </div>
                 </div>

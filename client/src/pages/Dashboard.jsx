@@ -92,6 +92,12 @@ function ReviewCard({ r, negative, googleReportUrl, busy, onMarkRead, onAcknowle
         </span>
       </div>
       {r.text && <div className="muted" style={{ fontSize: 13, marginTop: 4 }}>{r.text}</div>}
+      {!negative && r.positiveAiSummary && (
+        <div style={{ fontSize: 12, marginTop: 6, padding: '8px 10px', borderRadius: 8, background: 'var(--ok-soft)', color: 'var(--ink)' }}>
+          <span style={{ fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--ok)' }}>AI summary</span>
+          <div style={{ marginTop: 4 }}>{r.positiveAiSummary}</div>
+        </div>
+      )}
       <div className="flex between wrap" style={{ marginTop: 8, gap: 8 }}>
         <div className="csv-hint" style={{ marginTop: 0 }}>
           {r.source === 'google' ? 'Google' : 'Internal'} · {timeAgo(r.createdAt)}
@@ -209,8 +215,22 @@ export default function Dashboard() {
       const r = await api.markReviewRead(id);
       patchReview(id, { isRead: true, googleReplyPostedAt: r.googleReplyPosted ? new Date().toISOString() : null });
       if (r.warning) show(r.warning);
-      else if (r.googleReplyPosted) show('Thank-you reply posted on Google');
-      else show('Marked as read');
+      else show('Dismissed');
+    } catch (e) { show(e.message); }
+    finally { setReviewBusy(null); }
+  };
+
+  const retryThankYou = async (id) => {
+    setReviewBusy(id);
+    try {
+      const r = await api.sendReviewThankYou(id);
+      patchReview(id, {
+        isRead: true,
+        googleReplyPostedAt: r.googleReplyPosted ? new Date().toISOString() : null,
+      });
+      if (r.warning) show(r.warning);
+      else if (r.googleReplyPosted) show('Thank-you posted on Google');
+      else show('Could not post thank-you — try syncing Google reviews again');
     } catch (e) { show(e.message); }
     finally { setReviewBusy(null); }
   };
@@ -439,6 +459,7 @@ export default function Dashboard() {
                   onMarkRead={markRead}
                   onAcknowledge={acknowledgeReview}
                   onFlagFake={flagFake}
+                  onRetryThankYou={retryThankYou}
                 />
               ))}
             </div>
