@@ -1,0 +1,25 @@
+---
+description: gstack workflows and security bar for Revsy (use gstack /cso and /review before shipping)
+alwaysApply: true
+---
+
+# gstack + security (Revsy)
+
+## gstack (install globally, not in this repo)
+
+Before large features or releases, use [gstack](https://github.com/garrytan/gstack):
+
+1. Install: `git clone --depth 1 https://github.com/garrytan/gstack.git ~/.claude/skills/gstack && cd ~/.claude/skills/gstack && ./setup --host cursor`
+2. Security pass: **`/cso`** on this repo
+3. Code review: **`/review`** on the branch
+4. Pre-release: **`/qa`** on staging URL
+
+See `docs/SECURITY.md` for Strix dynamic scans and env checklist.
+
+## Revsy security defaults
+
+- Never commit `server/.env` or paste secrets into issues/chat
+- Production: `CRON_SECRET`, `FRONTEND_URL`, `WHATSAPP_WEBHOOK_VERIFY_TOKEN` required
+- Sign-up is **invite-only** in production unless `SIGNUP_MODE=open`
+- Admin routes must stay behind `adminAuth`; no service role keys in client
+- Run `npm run security:audit` before deploy

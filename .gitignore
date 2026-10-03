@@ -16,3 +16,4 @@ screenshots/
 demo.json
 supabase/.temp/
 .agents/
+.tmp/

@@ -41,6 +41,11 @@ const request = (method, path, body) => baseRequest(method, path, body, getToken
 const adminRequest = (method, path, body) => baseRequest(method, path, body, getAdminToken);
 
 export const api = {
+  publicConfig: () => fetch(`${API_BASE}/api/config/public`).then(async (res) => {
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Failed to load config');
+    return data;
+  }),
   authSupabase: (payload) => request('POST', '/auth/supabase', payload),
   login: (email, password) => request('POST', '/login', { email, password }),
   demoLogin: () => request('POST', '/login/demo'),

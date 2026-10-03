@@ -11,6 +11,15 @@ import { getCopy, defaultTemplateFor, defaultMessageTemplates, messagePresetsFor
 import { resolveFrontendUrl, resolveGoogleRedirectUri, buildGoogleAuthUrl, googleClientId, googleClientSecret, GOOGLE_SIGNIN_SCOPES, GOOGLE_BUSINESS_SCOPES, googleAccessDeniedMessage } from './oauth-urls.js';
 import { extractInboundMessages, extractDeliveryStatuses } from './sentimentFlow.js';
 import { handleCustomerInbound, handleInboundText, applyDeliveryStatus } from './inbound.js';
+import {
+  assertCronAuthorized,
+  inboundWebhookAuthorized,
+  inviteOnlySignup,
+  isProduction,
+  sanitizeShortText,
+  validatePassword,
+} from './security.js';
+import { authRateLimiter, signupRateLimiter, webhookRateLimiter } from './securityMiddleware.js';
 
 const router = Router();
 
@@ -179,7 +188,7 @@ async function getFeedbackForBusiness(businessId) {
 }
 
 // --- Auth ---
-router.post('/login', async (req, res) => {
+router.post('/login', authRateLimiter, async (req, res) => {
   const { email, password } = req.body || {};
   const db = getDb();
   const { data: bizData } = await db.from('businesses').select('*').eq('owner_email', email).single();
@@ -192,7 +201,7 @@ router.post('/login', async (req, res) => {
   res.json({ token, business: publicBusiness(business) });
 });
 
-router.post('/login/demo', async (req, res) => {
+router.post('/login/demo', authRateLimiter, async (req, res) => {
   const db = getDb();
   const { data: bizData } = await db.from('businesses').select('*').eq('is_demo', true).limit(1).maybeSingle();
   if (!bizData) return res.status(404).json({ error: 'Demo account not available' });
@@ -212,7 +221,10 @@ router.post('/logout', auth, async (req, res) => {
 });
 
 router.get('/config/public', (_req, res) => {
-  res.json(getPublicSupabaseConfig());
+  res.json({
+    ...getPublicSupabaseConfig(),
+    signupMode: inviteOnlySignup() ? 'invite_only' : 'open',
+  });
 });
 
 function verifyWhatsappWebhook(req, res) {
@@ -224,6 +236,9 @@ function verifyWhatsappWebhook(req, res) {
     return res.status(200).send(String(challenge || ''));
   }
   if (mode === 'subscribe' && !expected) {
+    if (isProduction()) {
+      return res.status(503).json({ error: 'WHATSAPP_WEBHOOK_VERIFY_TOKEN is not configured' });
+    }
     return res.status(200).send(String(challenge || ''));
   }
   return res.status(403).json({ error: 'Forbidden' });
@@ -252,22 +267,25 @@ async function processWebhookPayload(payload, res) {
   res.json({ ok: true, received: messages.length, deliveries, results });
 }
 
-router.get('/webhooks/whatsapp', verifyWhatsappWebhook);
-router.post('/webhooks/whatsapp', async (req, res) => {
+router.get('/webhooks/whatsapp', webhookRateLimiter, verifyWhatsappWebhook);
+router.post('/webhooks/whatsapp', webhookRateLimiter, async (req, res) => {
   try {
     await processWebhookPayload(req.body || {}, res);
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
-router.post('/webhooks/aisensy', async (req, res) => {
+router.post('/webhooks/aisensy', webhookRateLimiter, async (req, res) => {
   try {
     await processWebhookPayload(req.body || {}, res);
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
-router.post('/webhooks/inbound', async (req, res) => {
+router.post('/webhooks/inbound', webhookRateLimiter, async (req, res) => {
+  if (!inboundWebhookAuthorized(req)) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
   try {
     await processWebhookPayload(req.body || {}, res);
   } catch (e) {
@@ -297,9 +315,11 @@ async function findOrCreateBusinessForGoogle({ email, businessName, mode }) {
   }
   if (mode === 'login') return { error: 'No Revsy account found for this Google email. Create an account first.' };
 
-  const name = (businessName && String(businessName).trim())
-    || em.split('@')[0];
+  const name = sanitizeShortText((businessName && String(businessName).trim()) || em.split('@')[0], 120);
   const { data: invite } = await db.from('invited_emails').select('*').eq('email', em).eq('used', false).maybeSingle();
+  if (inviteOnlySignup() && !invite) {
+    return { error: 'Revsy is invite-only. Use the email your Revsy contact invited, or ask them to send an invite.' };
+  }
   const preApproved = !!invite;
   if (invite) await db.from('invited_emails').update({ used: true }).eq('id', invite.id);
 
@@ -439,7 +459,7 @@ router.get('/auth/google/start', (req, res) => {
   res.redirect(url);
 });
 
-router.post('/auth/supabase', async (req, res) => {
+router.post('/auth/supabase', authRateLimiter, async (req, res) => {
   const { accessToken, businessName, oauthState } = req.body || {};
   if (!accessToken) return res.status(400).json({ error: 'accessToken is required' });
   const stateData = oauthState ? verifyOAuthState(oauthState) : null;
@@ -454,12 +474,18 @@ router.post('/auth/supabase', async (req, res) => {
   if (existingBiz) {
     businessId = existingBiz.id;
   } else {
+    const { data: invite } = await db.from('invited_emails').select('*').eq('email', email).eq('used', false).maybeSingle();
+    if (inviteOnlySignup() && !invite) {
+      return res.status(403).json({ error: 'Revsy is invite-only. Sign in only works after your contact invites your email in Admin.' });
+    }
     const nameFromState = stateData?.businessName || businessName;
-    const name = nameFromState?.trim()
+    const name = sanitizeShortText(
+      nameFromState?.trim()
       || user.user_metadata?.business_name
       || user.user_metadata?.full_name
-      || email.split('@')[0];
-    const { data: invite } = await db.from('invited_emails').select('*').eq('email', email).eq('used', false).maybeSingle();
+      || email.split('@')[0],
+      120,
+    );
     const preApproved = !!invite;
     if (invite) await db.from('invited_emails').update({ used: true }).eq('id', invite.id);
     businessId = newId('biz');
@@ -512,7 +538,7 @@ router.post('/auth/supabase', async (req, res) => {
   });
 });
 
-router.post('/admin/login', async (req, res) => {
+router.post('/admin/login', authRateLimiter, async (req, res) => {
   const { email, password } = req.body || {};
   const db = getDb();
   const { data } = await db.from('admins').select('*').eq('email', email).single();
@@ -957,7 +983,7 @@ router.post('/reviews/summaries/issues/:issueId/read', auth, async (req, res) =>
 
 // Weekly cron: Vercel Cron calls GET /api/cron/weekly with Authorization: Bearer $CRON_SECRET
 router.get('/cron/jobs', async (req, res) => {
-  if (!assertCron(req, res)) return;
+  if (!assertCronAuthorized(req, res)) return;
   const sends = await processDueSends().catch((e) => ({ error: e.message }));
   const db = getDb();
   const { data: businesses } = await db.from('businesses').select('id').eq('approval_status', 'approved');
@@ -975,7 +1001,7 @@ router.get('/cron/jobs', async (req, res) => {
 });
 
 router.get('/cron/sends', async (req, res) => {
-  if (!assertCron(req, res)) return;
+  if (!assertCronAuthorized(req, res)) return;
   try {
     const result = await processDueSends();
     res.json({ ok: true, ...result });
@@ -985,7 +1011,7 @@ router.get('/cron/sends', async (req, res) => {
 });
 
 router.get('/cron/weekly', async (req, res) => {
-  if (!assertCron(req, res)) return;
+  if (!assertCronAuthorized(req, res)) return;
   const db = getDb();
   const { data: businesses } = await db.from('businesses').select('*').eq('approval_status', 'approved');
   const results = [];
@@ -1002,16 +1028,6 @@ router.get('/cron/weekly', async (req, res) => {
   res.json({ ok: true, results });
 });
 
-function assertCron(req, res) {
-  const secret = process.env.CRON_SECRET || '';
-  if (!secret) return true;
-  const authz = req.headers.authorization || '';
-  if (authz !== `Bearer ${secret}`) {
-    res.status(401).json({ error: 'Unauthorized' });
-    return false;
-  }
-  return true;
-}
 
 router.post('/reviews/google/sync', auth, async (req, res) => {
   const result = await syncGoogleReviewsForBusiness(req.business, { classifyNegative: classifyOneReview });
@@ -1540,15 +1556,20 @@ router.post('/admin/businesses/:id/reject', adminAuth, async (req, res) => {
 });
 
 // --- Public signup (replaces admin creates password) ---
-router.post('/signup', async (req, res) => {
+router.post('/signup', signupRateLimiter, async (req, res) => {
   const db = getDb();
   const { email, password, businessName } = req.body || {};
   if (!email || !password) return res.status(400).json({ error: 'email and password are required' });
+  const pwErr = validatePassword(password);
+  if (pwErr) return res.status(400).json({ error: pwErr });
   const em = String(email).trim().toLowerCase();
   const { data: existingBiz } = await db.from('businesses').select('*').eq('owner_email', em).single();
   if (existingBiz) return res.status(409).json({ error: 'An account with that email already exists' });
   // check invited_emails
   const { data: invite } = await db.from('invited_emails').select('*').eq('email', em).eq('used', false).single();
+  if (inviteOnlySignup() && !invite) {
+    return res.status(403).json({ error: 'Sign-up is invite-only. Contact your Revsy representative to get access.' });
+  }
   let preApproved = false;
   if (invite) {
     preApproved = true;
@@ -1603,6 +1624,9 @@ router.put('/admin/businesses/:id/google', adminAuth, async (req, res) => {
 });
 
 router.post('/reset-db', auth, async (req, res) => {
+  if (isProduction() || process.env.ENABLE_RESET_DB !== 'true') {
+    return res.status(404).json({ error: 'Not found' });
+  }
   const db = getDb();
   const fresh = (await import('./db.js')).buildSeedExport();
   // Clear all tables and reseed

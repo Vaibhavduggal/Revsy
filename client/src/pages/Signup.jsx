@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { api } from '../api.js';
 import { Rise } from 'cube-motion/react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../auth-context.jsx';
@@ -16,6 +17,13 @@ export default function Signup() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [signupMode, setSignupMode] = useState('open');
+
+  useEffect(() => {
+    api.publicConfig().then((c) => setSignupMode(c.signupMode || 'open')).catch(() => {});
+  }, []);
+
+  const inviteOnly = signupMode === 'invite_only';
 
   const submit = async (e) => {
     e.preventDefault();
@@ -40,6 +48,11 @@ export default function Signup() {
         <h2 style={{ textAlign: 'center', fontSize: 28 }}>Create your account</h2>
         <p className="sub" style={{ textAlign: 'center', marginBottom: 18 }}>Start collecting Google reviews on autopilot</p>
 
+        {inviteOnly ? (
+          <div className="csv-hint" style={{ marginBottom: 12, padding: 12, borderRadius: 10, background: 'var(--accent-soft)' }}>
+            Revsy is invite-only. Use the email your Revsy contact invited, then sign up with Google or the form below.
+          </div>
+        ) : null}
         <GoogleSignIn businessName={businessName} label="Sign up with Google" onError={show} />
 
         <div className="flex" style={{ alignItems: 'center', gap: 10, margin: '16px 0' }}>

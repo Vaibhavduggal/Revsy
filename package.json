@@ -14,7 +14,8 @@
     "screenshots:marketing": "npm run build && node scripts/screenshots-marketing.mjs",
     "screenshots:ux": "npm run build && node scripts/screenshots-ux.mjs",
     "start:local": "npm run build && node server/src/server.js",
-    "test:local": "echo 'Run: npm install && npm run dev, then visit http://localhost:4000'"
+    "test:local": "echo 'Run: npm install && npm run dev, then visit http://localhost:4000'",
+    "security:audit": "node scripts/security-audit.mjs"
   },
   "devDependencies": {
     "playwright": "^1.62.1"
